@@ -7,6 +7,7 @@ import * as vscode from 'vscode'
 import * as semver from 'semver'
 import { isCloud9 } from '../../shared/extensionUtilities'
 import { getInlineSuggestEnabled } from '../../shared/utilities/editorUtilities'
+import { getLogger } from '../../shared/logger'
 
 export function getLocalDatetime() {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -25,7 +26,7 @@ export function asyncCallWithTimeout<T>(asyncPromise: Promise<T>, message: strin
 }
 
 export function isInlineCompletionEnabled() {
-    return semver.gte(vscode.version, '1.68.0') && getInlineSuggestEnabled() && !isCloud9()
+    return getInlineSuggestEnabled() && !isCloud9()
 }
 
 // This is the VS Code version that started to have regressions in inline completion API
@@ -58,4 +59,17 @@ export function getPrefixSuffixOverlap(firstString: string, secondString: string
         i--
     }
     return secondString.slice(0, i)
+}
+
+export function get(key: string, context: vscode.Memento): any {
+    return context.get(key)
+}
+
+export async function set(key: string, value: any, context: vscode.Memento): Promise<void> {
+    await context.update(key, value).then(
+        () => {},
+        error => {
+            getLogger().verbose(`Failed to update global state: ${error}`)
+        }
+    )
 }

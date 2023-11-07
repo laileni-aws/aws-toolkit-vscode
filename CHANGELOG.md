@@ -1,3 +1,37 @@
+## 1.97.0 2023-11-02
+
+- **Bug Fix** CodeWhisperer: fix and improve closing symbols handling (brackets, parenthesis, quotes etc)
+
+## 1.96.0 2023-10-26
+
+- **Bug Fix** SAM debugging: "Invalid (or missing) template file" may occur even when a valid template.yaml is specified by `invokeTarget.templatePath` in the launch config. #2614
+- **Bug Fix** Redshift: The output message is not clear when a sql query is successful but returns no record.
+- **Bug Fix** Redshift: Re-launched connection wizard shows the old (stale) connection.
+- **Bug Fix** `AWS: Add SAM Debug Configuration` command only works the first time it is invoked.
+- **Bug Fix** Improved performance of CloudFormation file watcher startup
+- **Bug Fix** Output panel always opens at VS Code launch.
+- **Feature** Detect and notify about invalid settings.json #3910
+- **Feature** Redshift: "Create Notebook" opens an untitled document instead of prompting to "Save As"
+- **Feature** CloudWatch Logs: Preserve quickpick menu position when loading more items.
+- **Feature** CodeWhisperer: reduce auto-suggestions when there is immediate right context
+
+## 1.95.0 2023-10-17
+
+- **Feature** Amazon Redshift is now available in AWS Explorer. You can author and execute SQL queries from VS Code notebooks, and view your database objects in their Redshift warehouses.
+- **Feature** Public preview for CodeWhisperer Enterprise: Enterprise customers can now customize CodeWhisperer to adopt and suggest code based on organization specific codebases.
+
+## 1.94.0 2023-10-12
+
+- **Feature** CodeWhisperer: improve auto-suggestions for additional languages
+- **Feature** StepFunctions: Support rendering SFN graph with ItemProcessor field
+- **Feature** auth: Adding or switching connections in CodeWhisperer, CodeCatalyst and Explorer is now faster and requires fewer steps
+
+## 1.93.0 2023-10-05
+
+- **Bug Fix** SAM: local debugging of a .NET lambda may fail if `containerbuild=true`
+- **Bug Fix** BuilderID/IdentityCenter: Fix 'Invalid Client' error in the browser when re-authenticating
+- **Feature** CodeWhisperer: remove unnecessary "Proceed to login" prompt
+
 ## 1.92.0 2023-09-29
 
 - **Deprecation** SAM: removed support for Node.js 12.x [Lambda runtime](https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html)

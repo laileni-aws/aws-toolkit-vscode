@@ -106,6 +106,9 @@ export class CodeWhispererTracker {
                 credentialStartUrl: AuthUtil.instance.startUrl,
                 codewhispererUserGroup: CodeWhispererUserGroupSettings.getUserGroup().toString(),
             })
+            // TODO:
+            // Temperary comment out user modification event, need further discussion on how to calculate this metric
+            // TelemetryHelper.instance.sendUserModificationEvent(suggestion, percentage)
         }
     }
 
@@ -116,7 +119,7 @@ export class CodeWhispererTracker {
      * @param acceptedString the accepted suggestion that was inserted into the editor
      */
     public checkDiff(currString?: string, acceptedString?: string): number {
-        if (!currString || !acceptedString || currString.length == 0 || acceptedString.length == 0) {
+        if (!currString || !acceptedString || currString.length === 0 || acceptedString.length === 0) {
             return 1.0
         }
 

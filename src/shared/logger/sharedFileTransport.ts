@@ -7,7 +7,7 @@ import TransportStream from 'winston-transport'
 import { FileSystemCommon } from '../../srcShared/fs'
 import * as vscode from 'vscode'
 import globals from '../extensionGlobals'
-import { MESSAGE } from './debugConsoleTransport'
+import { MESSAGE } from './consoleLogTransport'
 import { WinstonToolkitLogger } from './winstonToolkitLogger'
 
 interface LogEntry {
@@ -52,7 +52,7 @@ export class SharedFileTransport extends TransportStream {
 
     /**
      * @returns a promise that resolves once a batch of logs are written to
-     *          the log file. 
+     *          the log file.
      */
     public override log(logEntry: LogEntry, next: () => void): Promise<void> {
         this.bufferedLogEntries.push(logEntry)

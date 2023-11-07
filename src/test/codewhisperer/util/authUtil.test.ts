@@ -9,7 +9,7 @@ import { getTestWindow } from '../../shared/vscode/window'
 import { SeverityLevel } from '../../shared/vscode/message'
 import { createBuilderIdProfile, createSsoProfile, createTestAuth } from '../../credentials/testUtil'
 import { captureEventOnce } from '../../testUtil'
-import { codewhispererScopes, isSsoConnection } from '../../../auth/connection'
+import { codewhispererScopes, isAnySsoConnection, isBuilderIdConnection } from '../../../auth/connection'
 
 const enterpriseSsoStartUrl = 'https://enterprise.awsapps.com/start'
 
@@ -20,6 +20,10 @@ describe('AuthUtil', async function () {
     beforeEach(async function () {
         auth = createTestAuth()
         authUtil = new AuthUtil(auth)
+    })
+
+    afterEach(async function () {
+        await auth.logout()
     })
 
     it('if there is no valid AwsBuilderID conn, it will create one and use it', async function () {
@@ -75,7 +79,7 @@ describe('AuthUtil', async function () {
         await auth.createInvalidSsoConnection(createBuilderIdProfile({ scopes: codewhispererScopes }))
         await authUtil.showReauthenticatePrompt()
 
-        const warningMessage = getTestWindow().shownMessages.filter(m => m.severity == SeverityLevel.Information)
+        const warningMessage = getTestWindow().shownMessages.filter(m => m.severity === SeverityLevel.Information)
         assert.strictEqual(warningMessage.length, 1)
         assert.strictEqual(
             warningMessage[0].message,
@@ -83,22 +87,20 @@ describe('AuthUtil', async function () {
         )
     })
 
-    it('prompts to attach connection to CodeWhisperer when switching to an unsupported connection', async function () {
+    it('CodeWhisperer uses fallback connection when switching to an unsupported connection', async function () {
         const supportedConn = await auth.createConnection(createBuilderIdProfile({ scopes: codewhispererScopes }))
         const unsupportedConn = await auth.createConnection(createSsoProfile())
-
-        getTestWindow().onDidShowQuickPick(picker => {
-            assert.ok(picker.title?.startsWith(`Some tools you've been using don't work with ${unsupportedConn.label}`))
-            const keepUsing = picker.findItemOrThrow(new RegExp(`keep using ${supportedConn.label}`))
-            picker.acceptItem(keepUsing)
-        })
 
         await auth.useConnection(supportedConn)
         assert.ok(authUtil.isConnected())
         assert.strictEqual(auth.activeConnection?.id, authUtil.conn?.id)
 
+        // Switch to unsupported connection
+        const cwAuthUpdatedConnection = captureEventOnce(authUtil.secondaryAuth.onDidChangeActiveConnection)
         await auth.useConnection(unsupportedConn)
-        await captureEventOnce(authUtil.secondaryAuth.onDidChangeActiveConnection)
+        await cwAuthUpdatedConnection
+
+        // Is using the fallback connection
         assert.ok(authUtil.isConnected())
         assert.ok(authUtil.isUsingSavedConnection)
         assert.notStrictEqual(auth.activeConnection?.id, authUtil.conn?.id)
@@ -109,18 +111,12 @@ describe('AuthUtil', async function () {
         await authUtil.connectToAwsBuilderId()
         assert.ok(authUtil.isConnected())
 
-        const ssoConnectionIds = new Set(auth.activeConnectionEvents.emits.filter(isSsoConnection).map(c => c.id))
+        const ssoConnectionIds = new Set(auth.activeConnectionEvents.emits.filter(isAnySsoConnection).map(c => c.id))
         assert.strictEqual(ssoConnectionIds.size, 1, 'Expected exactly 1 unique SSO connection id')
-        assert.strictEqual((await auth.listConnections()).filter(isSsoConnection).length, 1)
+        assert.strictEqual((await auth.listConnections()).filter(isAnySsoConnection).length, 1)
     })
 
-    it('prompts to upgrade connections if they do not have the required scopes', async function () {
-        getTestWindow().onDidShowMessage(message => {
-            assert.ok(message.modal)
-            message.assertMessage(/CodeWhisperer requires access to your/)
-            message.selectItem('Proceed')
-        })
-
+    it('automatically upgrades connections if they do not have the required scopes', async function () {
         const upgradeableConn = await auth.createConnection(createBuilderIdProfile())
         await auth.useConnection(upgradeableConn)
         assert.strictEqual(authUtil.isConnected(), false)
@@ -128,11 +124,11 @@ describe('AuthUtil', async function () {
         await authUtil.connectToAwsBuilderId()
         assert.ok(authUtil.isConnected())
         assert.ok(authUtil.isConnectionValid())
-        assert.ok(isSsoConnection(authUtil.conn))
+        assert.ok(isBuilderIdConnection(authUtil.conn))
         assert.strictEqual(authUtil.conn?.id, upgradeableConn.id)
         assert.strictEqual(authUtil.conn.startUrl, upgradeableConn.startUrl)
         assert.strictEqual(authUtil.conn.ssoRegion, upgradeableConn.ssoRegion)
-        assert.strictEqual((await auth.listConnections()).filter(isSsoConnection).length, 1)
+        assert.strictEqual((await auth.listConnections()).filter(isAnySsoConnection).length, 1)
     })
 
     it('test reformatStartUrl should remove trailing slash and hash', function () {

@@ -33,6 +33,9 @@ import {
     showIntroduction,
     reconnect,
     refreshStatusBar,
+    selectCustomizationPrompt,
+    notifyNewCustomizationsCmd,
+    connectWithCustomization,
 } from './commands/basicCommands'
 import { sleep } from '../shared/utilities/timeoutUtils'
 import { ReferenceLogViewProvider } from './service/referenceLogViewProvider'
@@ -49,7 +52,9 @@ import { AuthUtil } from './util/authUtil'
 import { ImportAdderProvider } from './service/importAdderProvider'
 import { TelemetryHelper } from './util/telemetryHelper'
 import { openUrl } from '../shared/utilities/vsCodeUtils'
+import { notifyNewCustomizations } from './util/customizationUtil'
 import { CodeWhispererCommandBackend, CodeWhispererCommandDeclarations } from './commands/gettingStartedPageCommands'
+import { AuthCommandDeclarations } from '../auth/commands'
 const performance = globalThis.performance ?? require('perf_hooks').performance
 
 export async function activate(context: ExtContext): Promise<void> {
@@ -86,6 +91,14 @@ export async function activate(context: ExtContext): Promise<void> {
     ImportAdderProvider.instance
 
     context.extensionContext.subscriptions.push(
+        Commands.register('aws.codewhisperer.signout', () => auth.secondaryAuth.deleteConnection()),
+        /** Opens the Add Connections webview with CW highlighted */
+        Commands.register('aws.codewhisperer.manageConnections', () => {
+            AuthCommandDeclarations.instance.declared.showManageConnections.execute(
+                'codewhispererDeveloperTools',
+                'codewhisperer'
+            )
+        }),
         /**
          * Configuration change
          */
@@ -155,6 +168,8 @@ export async function activate(context: ExtContext): Promise<void> {
         }),
         // show introduction
         showIntroduction.register(),
+        // direct CodeWhisperer connection setup with customization
+        connectWithCustomization.register(),
         // toggle code suggestions
         toggleCodeSuggestions.register(context.extensionContext.globalState),
         // enable code suggestions
@@ -177,6 +192,10 @@ export async function activate(context: ExtContext): Promise<void> {
         Commands.register({ id: 'aws.codeWhisperer', autoconnect: true }, async () => {
             invokeRecommendation(vscode.window.activeTextEditor as vscode.TextEditor, client, await getConfigEntry())
         }),
+        // select customization
+        selectCustomizationPrompt.register(),
+        // notify new customizations
+        notifyNewCustomizationsCmd.register(),
         /**
          * On recommendation acceptance
          */
@@ -190,17 +209,17 @@ export async function activate(context: ExtContext): Promise<void> {
         }),
 
         vscode.languages.registerHoverProvider(
-            [...CodeWhispererConstants.supportedLanguages],
+            [...CodeWhispererConstants.platformLanguageIds],
             ReferenceHoverProvider.instance
         ),
         vscode.window.registerWebviewViewProvider(ReferenceLogViewProvider.viewType, ReferenceLogViewProvider.instance),
         showReferenceLog.register(context),
         vscode.languages.registerCodeLensProvider(
-            [...CodeWhispererConstants.supportedLanguages],
+            [...CodeWhispererConstants.platformLanguageIds],
             ReferenceInlineProvider.instance
         ),
         vscode.languages.registerCodeLensProvider(
-            [...CodeWhispererConstants.supportedLanguages, { scheme: 'untitled' }],
+            [...CodeWhispererConstants.platformLanguageIds, { scheme: 'untitled' }],
             ImportAdderProvider.instance
         )
     )
@@ -209,6 +228,9 @@ export async function activate(context: ExtContext): Promise<void> {
 
     if (auth.isConnectionExpired()) {
         auth.showReauthenticatePrompt()
+    }
+    if (auth.isValidEnterpriseSsoInUse()) {
+        await notifyNewCustomizations()
     }
 
     function activateSecurityScan() {
@@ -322,7 +344,7 @@ export async function activate(context: ExtContext): Promise<void> {
          * Manual trigger
          */
         context.extensionContext.subscriptions.push(
-            vscode.languages.registerCompletionItemProvider([...CodeWhispererConstants.supportedLanguages], {
+            vscode.languages.registerCompletionItemProvider([...CodeWhispererConstants.platformLanguageIds], {
                 async provideCompletionItems(
                     document: vscode.TextDocument,
                     position: vscode.Position,
@@ -353,7 +375,7 @@ export async function activate(context: ExtContext): Promise<void> {
                 securityPanelViewProvider.disposeSecurityPanelItem(e, editor)
                 CodeWhispererCodeCoverageTracker.getTracker(e.document.languageId)?.countTotalTokens(e)
 
-                if (e.contentChanges.length != 0 && !vsCodeState.isCodeWhispererEditing) {
+                if (e.contentChanges.length === 0 || vsCodeState.isCodeWhispererEditing) {
                     return
                 }
                 /**

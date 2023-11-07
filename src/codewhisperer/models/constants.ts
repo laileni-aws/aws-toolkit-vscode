@@ -83,7 +83,7 @@ export const tsx = 'typescriptreact'
 export const plaintext = 'plaintext'
 
 // use vscode languageId here
-export const supportedLanguages = [
+export const platformLanguageIds = [
     'java',
     'python',
     'javascript',
@@ -93,6 +93,7 @@ export const supportedLanguages = [
     'csharp',
     'c',
     'cpp',
+    'c_cpp', // Cloud9 reports C++ files with this language-id.
     'go',
     'kotlin',
     'php',
@@ -100,10 +101,12 @@ export const supportedLanguages = [
     'rust',
     'scala',
     'shellscript',
+    'sh', // Cloud9 reports bash files with this language-id
     'sql',
+    'golang', // Cloud9 reports Go files with this language-id
 ] as const
 
-export type SupportedLanguage = (typeof supportedLanguages)[number]
+export type PlatformLanguageId = (typeof platformLanguageIds)[number]
 
 /**
  * Prompt
@@ -148,9 +151,15 @@ export const autoTriggerEnabledKey = 'CODEWHISPERER_AUTO_TRIGGER_ENABLED'
 
 export const serviceActiveKey = 'CODEWHISPERER_SERVICE_ACTIVE'
 
+export const persistedCustomizationsKey = 'CODEWHISPERER_PERSISTED_CUSTOMIZATIONS'
+
+export const selectedCustomizationKey = 'CODEWHISPERER_SELECTED_CUSTOMIZATION'
+
 export const learnMoreUriGeneral = 'https://aws.amazon.com/codewhisperer/'
 
 export const learnMoreUri = 'https://docs.aws.amazon.com/toolkit-for-vscode/latest/userguide/codewhisperer.html'
+
+export const customLearnMoreUri = 'https://docs.aws.amazon.com/codewhisperer/latest/userguide/customizations.html'
 
 export const securityScanLearnMoreUri = 'https://docs.aws.amazon.com/codewhisperer/latest/userguide/security-scans.html'
 
@@ -240,6 +249,9 @@ export const throttlingMessage = `Maximum recommendation count reached for this 
 
 export const connectionChangeMessage = `Keep using CodeWhisperer with `
 
+// TODO: align this text with service side
+export const invalidCustomizationMessage = `You are not authorized to access`
+
 export const failedToConnectAwsBuilderId = `Failed to connect to AWS Builder ID`
 
 export const failedToConnectIamIdentityCenter = `Failed to connect to IAM Identity Center`
@@ -260,10 +272,15 @@ export const userGroupKey = 'CODEWHISPERER_USER_GROUP'
 
 export const updateInlineLockKey = 'CODEWHISPERER_INLINE_UPDATE_LOCK_KEY'
 
+export const newCustomizationMessage = 'You have access to new CodeWhisperer customizations.'
+
+export const newCustomizationAvailableKey = 'CODEWHISPERER_NEW_CUSTOMIZATION_AVAILABLE'
+
 export enum UserGroup {
     Classifier = 'Classifier',
     CrossFile = 'CrossFile',
     Control = 'Control',
+    RightContext = 'RightContext',
 }
 
 export const isClassifierEnabledKey = 'CODEWHISPERER_CLASSIFIER_TRIGGER_ENABLED'

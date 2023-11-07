@@ -22,6 +22,8 @@ phases:
             java: latest
 
         commands:
+            # Disable engine-strict in CI.
+            - sed -i -e 's/engine.strict.true/engine-strict=false/' .npmrc
             - '>/dev/null add-apt-repository universe'
             - '>/dev/null apt-get -qq install -y apt-transport-https'
             - '>/dev/null apt-get -qq update'
@@ -58,11 +60,7 @@ phases:
             - chmod 666 /var/run/docker.sock
 
     pre_build:
-        env:
-            variables:
-                HOME: /home/codebuild-user
         commands:
-            # CodeBuild ignores the env.variables.HOME declaration above? :(
             - export HOME=/home/codebuild-user
             - bash buildspec/setup-github-token.sh
             # If present, log into CodeArtifact. Provides a nice safety net in case NPM is down.
@@ -91,11 +89,7 @@ phases:
             # - go version
 
     build:
-        env:
-            variables:
-                HOME: /home/codebuild-user
         commands:
-            # CodeBuild ignores the env.variables.HOME declaration above? :(
             - export HOME=/home/codebuild-user
             - npm ci
             - xvfb-run npm run testInteg

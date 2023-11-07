@@ -35,7 +35,7 @@ async function getLocalCommands(auth: CodeCatalystAuthenticationProvider) {
     const docsUrl = isCloud9() ? codecatalyst.docs.cloud9.overview : codecatalyst.docs.vscode.overview
     if (!isBuilderIdConnection(auth.activeConnection) || !(await auth.isConnectionOnboarded(auth.activeConnection))) {
         return [
-            AuthCommandDeclarations.instance.declared.showConnectionsPage
+            AuthCommandDeclarations.instance.declared.showManageConnections
                 .build('codecatalystDeveloperTools', 'codecatalyst')
                 .asTreeNode({
                     label: 'Start',
@@ -150,9 +150,18 @@ export class CodeCatalystRootNode implements RootNode {
             item.description = 'Connected to Dev Environment'
             item.iconPath = addColor(getIcon('vscode-pass'), 'testing.iconPassed')
         } else {
-            item.description = this.authProvider.isUsingSavedConnection ? 'AWS Builder ID Connected' : undefined
+            item.description = this.getDescription()
         }
 
         return item
+    }
+
+    private getDescription(): string {
+        if (this.authProvider.activeConnection) {
+            return this.authProvider.secondaryAuth.isConnectionExpired
+                ? 'Expired Connection'
+                : 'AWS Builder ID Connected'
+        }
+        return ''
     }
 }

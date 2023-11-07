@@ -8,8 +8,7 @@ import * as CodeWhispererConstants from '../models/constants'
 import { Auth } from '../../auth/auth'
 import { ToolkitError } from '../../shared/errors'
 import { getSecondaryAuth } from '../../auth/secondaryAuth'
-import { Commands } from '../../shared/vscode/commands2'
-import { isCloud9 } from '../../shared/extensionUtilities'
+import { isCloud9, isSageMaker } from '../../shared/extensionUtilities'
 import { PromptSettings } from '../../shared/settings'
 import {
     ssoAccountAccessScopes,
@@ -28,8 +27,12 @@ import { getLogger } from '../../shared/logger'
 export const defaultCwScopes = [...ssoAccountAccessScopes, ...codewhispererScopes]
 export const awsBuilderIdSsoProfile = createBuilderIdProfile(defaultCwScopes)
 
-export const isValidCodeWhispererConnection = (conn: Connection): conn is Connection => {
+export const isValidCodeWhispererConnection = (conn?: Connection): conn is Connection => {
     if (isCloud9('classic')) {
+        return isIamConnection(conn)
+    }
+
+    if (isSageMaker()) {
         return isIamConnection(conn)
     }
 
@@ -44,6 +47,22 @@ export class AuthUtil {
 
     private usingEnterpriseSSO: boolean = false
     private reauthenticatePromptShown: boolean = false
+    private _isCustomizationFeatureEnabled: boolean = false
+
+    public get isCustomizationFeatureEnabled(): boolean {
+        return this._isCustomizationFeatureEnabled
+    }
+
+    // This boolean controls whether the Select Customization node will be visible. A change to this value
+    // means that the old UX was wrong and must refresh the devTool tree.
+    public set isCustomizationFeatureEnabled(value: boolean) {
+        if (this._isCustomizationFeatureEnabled === value) {
+            return
+        }
+        this._isCustomizationFeatureEnabled = value
+        vscode.commands.executeCommand('aws.codeWhisperer.refresh')
+        vscode.commands.executeCommand('aws.codeWhisperer.refreshStatusBar')
+    }
 
     public readonly secondaryAuth = getSecondaryAuth(
         this.auth,
@@ -63,6 +82,9 @@ export class AuthUtil {
         this.secondaryAuth.onDidChangeActiveConnection(async conn => {
             if (conn?.type === 'sso') {
                 this.usingEnterpriseSSO = !isBuilderIdConnection(conn)
+                if (!this.isConnectionExpired() && this.usingEnterpriseSSO) {
+                    vscode.commands.executeCommand('aws.codeWhisperer.notifyNewCustomizations')
+                }
             } else {
                 this.usingEnterpriseSSO = false
             }
@@ -72,9 +94,16 @@ export class AuthUtil {
                 vscode.commands.executeCommand('aws.codeWhisperer.refreshStatusBar'),
                 vscode.commands.executeCommand('aws.codeWhisperer.updateReferenceLog'),
             ])
+            const prompts = PromptSettings.instance
+
+            const shouldShow = await prompts.isPromptEnabled('codeWhispererNewWelcomeMessage')
             // To check valid connection
             if (this.isValidEnterpriseSsoInUse() || (this.isBuilderIdInUse() && !this.isConnectionExpired())) {
-                await vscode.commands.executeCommand('aws.codeWhisperer.enableCodeSuggestions')
+                //If user login old or new, If welcome message is not shown then open the Getting Started Page after this mark it as SHOWN.
+                if (shouldShow) {
+                    vscode.commands.executeCommand('aws.codeWhisperer.gettingStarted')
+                    prompts.disablePrompt('codeWhispererNewWelcomeMessage')
+                }
             }
             await vscode.commands.executeCommand('setContext', 'CODEWHISPERER_ENABLED', this.isConnected())
         })
@@ -97,7 +126,7 @@ export class AuthUtil {
     }
 
     public get isUsingSavedConnection() {
-        return this.conn !== undefined && this.secondaryAuth.isUsingSavedConnection
+        return this.conn !== undefined && this.secondaryAuth.hasSavedConnection
     }
 
     public isConnected(): boolean {
@@ -156,8 +185,6 @@ export class AuthUtil {
         }
 
         const self = (this.#instance = new this())
-        Commands.register('aws.codeWhisperer.removeConnection', () => self.secondaryAuth.removeConnection())
-
         return self
     }
 

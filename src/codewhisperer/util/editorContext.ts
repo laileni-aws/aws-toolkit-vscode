@@ -16,6 +16,7 @@ import {
     fetchSupplementalContext,
 } from './supplementalContext/supplementalContextUtil'
 import { supplementalContextTimeoutInMs } from '../models/constants'
+import { getSelectedCustomization } from './customizationUtil'
 import { selectFrom } from '../../shared/utilities/tsUtils'
 
 let tabSize: number = getTabSizeSetting()
@@ -44,8 +45,7 @@ export function extractContextForCodeWhisperer(editor: vscode.TextEditor): codew
         filename: getFileNameForRequest(editor),
         programmingLanguage: {
             languageName:
-                runtimeLanguageContext.mapVscLanguageToCodeWhispererLanguage(editor.document.languageId) ??
-                editor.document.languageId,
+                runtimeLanguageContext.normalizeLanguage(editor.document.languageId) ?? editor.document.languageId,
         },
         leftFileContent: caretLeftFileContext,
         rightFileContent: caretRightFileContext,
@@ -102,6 +102,7 @@ export async function buildListRecommendationRequest(
 
     logSupplementalContext(supplementalContexts)
 
+    const selectedCustomization = getSelectedCustomization()
     const supplementalContext: codewhispererClient.SupplementalContext[] = supplementalContexts
         ? supplementalContexts.supplementalContextItems.map(v => {
               return selectFrom(v, 'content', 'filePath')
@@ -114,6 +115,7 @@ export async function buildListRecommendationRequest(
                 fileContext: fileContext,
                 nextToken: nextToken,
                 supplementalContexts: supplementalContext,
+                customizationArn: selectedCustomization.arn === '' ? undefined : selectedCustomization.arn,
             },
             supplementalMetadata: supplementalMetadata,
         }
@@ -127,6 +129,7 @@ export async function buildListRecommendationRequest(
                 recommendationsWithReferences: allowCodeWithReference ? 'ALLOW' : 'BLOCK',
             },
             supplementalContexts: supplementalContext,
+            customizationArn: selectedCustomization.arn === '' ? undefined : selectedCustomization.arn,
         },
         supplementalMetadata: supplementalMetadata,
     }
@@ -171,12 +174,12 @@ export function validateRequest(
     req: codewhispererClient.ListRecommendationsRequest | codewhispererClient.GenerateRecommendationsRequest
 ): boolean {
     const isLanguageNameValid = !(
-        req.fileContext.programmingLanguage.languageName == undefined ||
+        req.fileContext.programmingLanguage.languageName === undefined ||
         req.fileContext.programmingLanguage.languageName.length < 1 ||
         req.fileContext.programmingLanguage.languageName.length > 128 ||
         !runtimeLanguageContext.isLanguageSupported(req.fileContext.programmingLanguage.languageName)
     )
-    const isFileNameValid = !(req.fileContext.filename == undefined || req.fileContext.filename.length < 1)
+    const isFileNameValid = !(req.fileContext.filename === undefined || req.fileContext.filename.length < 1)
     const isFileContextValid = !(
         req.fileContext.leftFileContent.length > CodeWhispererConstants.charactersLimit ||
         req.fileContext.rightFileContent.length > CodeWhispererConstants.charactersLimit
