@@ -14,7 +14,7 @@ import { getLambdaDetails } from '../../lambda/utils'
 import { WatchedFiles, WatchedItem } from './watchedFiles'
 import { getLogger } from '../logger'
 import globals from '../extensionGlobals'
-import { sleep } from '../utilities/timeoutUtils'
+import { Timeout, sleep } from '../utilities/timeoutUtils'
 import { localize } from '../utilities/vsCodeUtils'
 import { PerfLog } from '../logger/logger'
 
@@ -71,7 +71,8 @@ export class AsyncCloudFormationTemplateRegistry {
     constructor(
         private readonly instance: CloudFormationTemplateRegistry,
         private readonly asyncSetupFunc: (
-            instance: CloudFormationTemplateRegistry
+            instance: CloudFormationTemplateRegistry,
+            cancelSetup: Timeout
         ) => Promise<CloudFormationTemplateRegistry>
     ) {}
 
@@ -86,18 +87,21 @@ export class AsyncCloudFormationTemplateRegistry {
         }
 
         let perf: PerfLog
+        const cancelSetup = new Timeout(30 * 60 * 1000) // 30 min
         if (!this.setupPromise) {
             perf = new PerfLog('cfn: template registry setup')
-            this.setupPromise = this.asyncSetupFunc(this.instance)
+            this.setupPromise = this.asyncSetupFunc(this.instance, cancelSetup)
         }
         this.setupPromise.then(() => {
             if (perf) {
                 perf.done()
             }
             this.isSetup = true
+            cancelSetup.dispose()
         })
         // Show user a message indicating setup is in progress
         if (this.setupProgressMessage === undefined) {
+            // TODO: use showMessageWithCancel() ?
             this.setupProgressMessage = vscode.window.withProgress(
                 {
                     location: vscode.ProgressLocation.Notification,
@@ -111,6 +115,7 @@ export class AsyncCloudFormationTemplateRegistry {
                     token.onCancellationRequested(() => {
                         // Allows for new message to be created if templateRegistry variable attempted to be used again
                         this.setupProgressMessage = undefined
+                        cancelSetup.cancel()
                     })
                     getLogger().debug('cfn: getInstance() requested, still initializing')
                     while (!this.isSetup) {
