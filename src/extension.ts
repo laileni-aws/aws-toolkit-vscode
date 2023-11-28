@@ -54,6 +54,8 @@ import { activate as activateIot } from './iot/activation'
 import { activate as activateDev } from './dev/activation'
 import { activate as activateRedshift } from './redshift/activation'
 import { CredentialsStore } from './auth/credentials/store'
+import { activate as activateCWChat } from './amazonq/activation'
+import { activate as activateQGumby } from './amazonqGumby/activation'
 import { getSamCliContext } from './shared/sam/cli/samCliContext'
 import { Ec2CredentialsProvider } from './auth/providers/ec2CredentialsProvider'
 import { EnvVarsCredentialsProvider } from './auth/providers/envVarsCredentialsProvider'
@@ -74,10 +76,12 @@ import { showMessageWithUrl, showViewLogsMessage } from './shared/utilities/mess
 import { registerWebviewErrorHandler } from './webviews/server'
 import { initializeManifestPaths } from './extensionShared'
 import { ChildProcess } from './shared/utilities/childProcess'
+import { initializeNetworkAgent } from './codewhisperer/client/agent'
 
 let localize: nls.LocalizeFunc
 
 export async function activate(context: vscode.ExtensionContext) {
+    initializeNetworkAgent()
     await initializeComputeRegion()
     const activationStartedOn = Date.now()
     localize = nls.loadMessageBundle()
@@ -137,8 +141,8 @@ export async function activate(context: vscode.ExtensionContext) {
         const settings = Settings.instance
         const experiments = Experiments.instance
 
-        await initializeCredentials(context, awsContext, loginManager)
         await activateTelemetry(context, awsContext, settings)
+        await initializeCredentials(context, awsContext, loginManager)
 
         experiments.onDidChange(({ key }) => {
             telemetry.aws_experimentActivation.run(span => {
@@ -220,14 +224,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
         await activateCloudFormationTemplateRegistry(context)
 
-        await activateCodeWhisperer(extContext)
-
         await activateAwsExplorer({
             context: extContext,
             regionProvider,
             toolkitOutputChannel,
             remoteInvokeOutputChannel,
         })
+
+        await activateCodeWhisperer(extContext)
 
         await activateAppRunner(extContext)
 
@@ -257,6 +261,11 @@ export async function activate(context: vscode.ExtensionContext) {
         await activateEcs(extContext)
 
         await activateSchemas(extContext)
+
+        if (!isCloud9()) {
+            await activateCWChat(extContext.extensionContext)
+            await activateQGumby(extContext)
+        }
 
         await activateStepFunctions(context, awsContext, toolkitOutputChannel)
 
@@ -406,17 +415,28 @@ export function logAndShowWebviewError(err: unknown, webviewId: string, command:
 }
 
 async function checkSettingsHealth(settings: Settings): Promise<boolean> {
-    const ok = await settings.isValid()
-    if (!ok) {
-        const msg = 'User settings.json file appears to be invalid. Check settings.json for syntax errors.'
-        const openSettingsItem = 'Open settings.json'
-        showViewLogsMessage(msg, 'error', [openSettingsItem]).then(async resp => {
-            if (resp === openSettingsItem) {
-                vscode.commands.executeCommand('workbench.action.openSettingsJson')
-            }
-        })
+    const r = await settings.isValid()
+    switch (r) {
+        case 'invalid': {
+            const msg = 'Failed to access settings. Check settings.json for syntax errors.'
+            const openSettingsItem = 'Open settings.json'
+            showViewLogsMessage(msg, 'error', [openSettingsItem]).then(async resp => {
+                if (resp === openSettingsItem) {
+                    vscode.commands.executeCommand('workbench.action.openSettingsJson')
+                }
+            })
+            return false
+        }
+        // Don't show a message for 'nowrite' because:
+        //  - settings.json may intentionally be readonly. #4043
+        //  - vscode will show its own error if settings.json cannot be written.
+        //
+        // Note: isValid() already logged a warning.
+        case 'nowrite':
+        case 'ok':
+        default:
+            return true
     }
-    return ok
 }
 
 async function getMachineId(): Promise<string> {
