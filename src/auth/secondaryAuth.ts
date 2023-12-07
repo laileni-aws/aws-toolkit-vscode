@@ -5,102 +5,31 @@
 
 import globals from '../shared/extensionGlobals'
 
-import * as nls from 'vscode-nls'
-const localize = nls.loadMessageBundle()
-
 import * as vscode from 'vscode'
-import * as localizedText from '../shared/localizedText'
 import { getLogger } from '../shared/logger'
-import { showQuickPick } from '../shared/ui/pickerPrompter'
 import { cast, Optional } from '../shared/utilities/typeConstructors'
 import { Auth } from './auth'
 import { once } from '../shared/utilities/functionUtils'
-import { telemetry } from '../shared/telemetry/telemetry'
-import { createExitButton, createHelpButton } from '../shared/ui/buttons'
 import { isNonNullable } from '../shared/utilities/tsUtils'
-import { builderIdStartUrl } from './sso/model'
-import { CancellationError } from '../shared/utilities/timeoutUtils'
 import { Connection, SsoConnection, StatefulConnection } from './connection'
 
-async function promptUseNewConnection(newConn: Connection, oldConn: Connection, tools: string[], swapNo: boolean) {
-    // Multi-select picker would be better ?
-    const saveConnectionItem = {
-        label: `Yes, keep using ${newConn.label} with ${tools.join(', ')} while using ${
-            oldConn.label
-        } with other services.`,
-        detail: `To remove later, select "Remove Connection from Tool" from the tool's context (right-click) menu.`,
-        data: 'yes',
-    } as const
-
-    const useConnectionItem = {
-        label: `No, switch everything to authenticate with ${(swapNo ? newConn : oldConn).label}.`,
-        detail: 'This will not log you out; you can reconnect at any time by switching connections.',
-        data: 'no',
-    } as const
-
-    const helpButton = createHelpButton()
-    const openLink = helpButton.onClick.bind(helpButton)
-    helpButton.onClick = () => {
-        telemetry.ui_click.emit({ elementId: 'connection_multiple_auths_help' })
-        openLink()
-    }
-
-    const resp = await showQuickPick([saveConnectionItem, useConnectionItem], {
-        title: `Some tools you've been using don't work with ${oldConn.label}. Keep using ${newConn.label} in the background while using ${oldConn.label}?`,
-        placeholder: 'Confirm choice',
-        buttons: [helpButton, createExitButton()],
-    })
-
-    switch (resp) {
-        case 'yes':
-            telemetry.ui_click.emit({ elementId: 'connection_multiple_auths_yes' })
-            break
-        case 'no':
-            telemetry.ui_click.emit({ elementId: 'connection_multiple_auths_no' })
-            break
-        default:
-            telemetry.ui_click.emit({ elementId: 'connection_multiple_auths_exit' })
-    }
-
-    return resp
-}
-
-async function promptForRescope(conn: SsoConnection, toolLabel: string) {
-    const message = localize(
-        'aws.auth.rescopeConnection.message',
-        '{0} requires access to your {1} connection. Proceed to login to grant {0} access?',
-        toolLabel,
-        conn.startUrl === builderIdStartUrl ? localizedText.builderId() : localizedText.iamIdentityCenter
-    )
-    const resp = await vscode.window.showInformationMessage(message, { modal: true }, localizedText.proceed)
-    if (resp !== localizedText.proceed) {
-        telemetry.ui_click.emit({ elementId: 'connection_rescope_cancel' })
-        throw new CancellationError('user')
-    }
-
-    telemetry.ui_click.emit({ elementId: 'connection_rescope_proceed' })
-}
-
-let oldConn: Auth['activeConnection']
+let currentConn: Auth['activeConnection']
 const auths = new Map<string, SecondaryAuth>()
 const multiConnectionListeners = new WeakMap<Auth, vscode.Disposable>()
 const registerAuthListener = (auth: Auth) => {
-    return auth.onDidChangeActiveConnection(async conn => {
-        const potentialConn = oldConn
-        if (conn !== undefined && potentialConn?.state === 'valid') {
+    return auth.onDidChangeActiveConnection(async newConn => {
+        // When we change the active connection, there may be
+        // secondary auths that were dependent on the previous active connection.
+        // To ensure secondary auths still work, when we change to a new active connection,
+        // the following will "save" the oldConn with the secondary auths that are using it.
+        const oldConn = currentConn
+        if (newConn && oldConn?.state === 'valid') {
             const saveableAuths = Array.from(auths.values()).filter(
-                a => !a.isUsingSavedConnection && a.isUsable(potentialConn) && !a.isUsable(conn)
+                a => !a.hasSavedConnection && a.isUsable(oldConn) && !a.isUsable(newConn)
             )
-            const toolNames = saveableAuths.map(a => a.toolLabel)
-            if (
-                saveableAuths.length > 0 &&
-                (await promptUseNewConnection(potentialConn, conn, toolNames, false)) === 'yes'
-            ) {
-                await Promise.all(saveableAuths.map(a => a.saveConnection(potentialConn)))
-            }
+            await Promise.all(saveableAuths.map(a => a.saveConnection(oldConn)))
         }
-
-        oldConn = conn
+        currentConn = newConn
     })
 }
 
@@ -125,15 +54,13 @@ export function getSecondaryAuth<T extends Connection>(
  * Gets all {@link SecondaryAuth} instances that have saved the connection
  */
 export function getDependentAuths(conn: Connection): SecondaryAuth[] {
-    return Array.from(auths.values()).filter(
-        auth => auth.isUsingSavedConnection && auth.activeConnection?.id === conn.id
-    )
+    return Array.from(auths.values()).filter(auth => auth.hasSavedConnection && auth.activeConnection?.id === conn.id)
 }
 
 export function getAllConnectionsInUse(auth: Auth): StatefulConnection[] {
     const connMap = new Map<Connection['id'], StatefulConnection>()
     const toolConns = Array.from(auths.values())
-        .filter(a => a.isUsingSavedConnection)
+        .filter(a => a.hasSavedConnection)
         .map(a => a.activeConnection)
 
     for (const conn of [auth.activeConnection, ...toolConns].filter(isNonNullable)) {
@@ -169,15 +96,16 @@ export class SecondaryAuth<T extends Connection = Connection> {
         private readonly auth: Auth,
         private readonly memento = globals.context.globalState
     ) {
-        const handleConnectionChanged = async (conn?: Connection) => {
-            if (
-                conn === undefined &&
-                this.#savedConnection &&
-                this.#savedConnection.id === this.#activeConnection?.id
-            ) {
-                await this.removeConnection()
-            } else {
-                this.#activeConnection = conn
+        const handleConnectionChanged = async (newActiveConn?: Connection) => {
+            if (newActiveConn === undefined && this.#activeConnection?.id) {
+                // The active connection was removed
+                await this.clearActiveConnection()
+            }
+
+            const previousActiveId = this.activeConnection?.id
+            this.#activeConnection = newActiveConn
+            if (this.activeConnection?.id !== previousActiveId) {
+                // The user will get a different active connection from before, so notify them.
                 this.#onDidChangeActiveConnection.fire(this.activeConnection)
             }
         }
@@ -189,19 +117,39 @@ export class SecondaryAuth<T extends Connection = Connection> {
             }
         })
 
+        this.auth.onDidChangeConnectionState(e => {
+            if (this.activeConnection?.id === e.id) {
+                this.#onDidChangeActiveConnection.fire(this.activeConnection)
+            }
+        })
+
         // Register listener and handle connection immediately in case we were instantiated late
         handleConnectionChanged(this.auth.activeConnection)
         this.auth.onDidChangeActiveConnection(handleConnectionChanged)
+        this.auth.onDidDeleteConnection(async (deletedConnId: Connection['id']) => {
+            if (deletedConnId === this.#activeConnection?.id) {
+                await this.clearActiveConnection()
+            }
+            if (deletedConnId === this.#savedConnection?.id) {
+                // Our saved connection does not exist anymore, delete the reference to it.
+                await this.clearSavedConnection()
+            }
+        })
     }
 
     public get activeConnection(): T | undefined {
-        return (
-            this.#savedConnection ??
-            (this.#activeConnection && this.isUsable(this.#activeConnection) ? this.#activeConnection : undefined)
-        )
+        if (this.#savedConnection) {
+            return this.#savedConnection
+        }
+
+        if (this.#activeConnection && this.isUsable(this.#activeConnection)) {
+            return this.#activeConnection
+        }
+
+        return undefined
     }
 
-    public get isUsingSavedConnection() {
+    public get hasSavedConnection() {
         return this.#savedConnection !== undefined
     }
 
@@ -215,26 +163,46 @@ export class SecondaryAuth<T extends Connection = Connection> {
         this.#onDidChangeActiveConnection.fire(this.activeConnection)
     }
 
-    public async removeConnection() {
+    /**
+     * Globally deletes the connection that this secondary auth is using,
+     * effectively doing a signout.
+     */
+    public async deleteConnection() {
+        if (this.activeConnection) {
+            await this.auth.deleteConnection(this.activeConnection)
+            await this.clearSavedConnection()
+        }
+    }
+
+    /** Stop using the saved connection and fallback to using the active connection, if it is usable. */
+    private async clearSavedConnection() {
         await this.memento.update(this.key, undefined)
         this.#savedConnection = undefined
         this.#onDidChangeActiveConnection.fire(this.activeConnection)
     }
 
+    private async clearActiveConnection() {
+        this.#activeConnection = undefined
+        if (this.#savedConnection) {
+            /**
+             * No need to emit event since user is currently
+             * using the saved connection
+             */
+            return
+        }
+        this.#onDidChangeActiveConnection.fire(undefined)
+    }
+
     public async useNewConnection(conn: T) {
-        if (this.auth.activeConnection !== undefined && !this.isUsable(this.auth.activeConnection)) {
-            if ((await promptUseNewConnection(conn, this.auth.activeConnection, [this.toolLabel], true)) === 'yes') {
-                await this.saveConnection(conn)
-            } else {
-                await this.auth.useConnection(conn)
-            }
-        } else {
+        await this.saveConnection(conn)
+        if (this.auth.activeConnection === undefined) {
+            // Since no connection exists yet in the "primary" auth, we will make
+            // this connection available to all primary auth users
             await this.auth.useConnection(conn)
         }
     }
 
     public async addScopes(conn: T & SsoConnection, extraScopes: string[]) {
-        await promptForRescope(conn, this.toolLabel)
         const oldScopes = conn.scopes ?? []
         const newScopes = Array.from(new Set([...oldScopes, ...extraScopes]))
 
@@ -252,11 +220,11 @@ export class SecondaryAuth<T extends Connection = Connection> {
         try {
             return await this.auth.reauthenticate(updatedConn)
         } catch (e) {
-            if (CancellationError.isUserCancelled(e)) {
-                // We updated the connection scopes, but the user cancelled reauth.
-                // Revert to old connection scopes, otherwise the new scopes persist.
-                await updateConnectionScopes(oldScopes)
-            }
+            // We updated the connection scopes pre-emptively, but if there is some issue (e.g. user cancels,
+            // InvalidGrantException, etc), then we need to revert to the old connection scopes. Otherwise,
+            // this could soft-lock users into a broken connection that cannot be re-authenticated without
+            // first deleting the connection.
+            await updateConnectionScopes(oldScopes)
             throw e
         }
     }
@@ -289,6 +257,7 @@ export class SecondaryAuth<T extends Connection = Connection> {
             getLogger().warn(`auth (${this.toolId}): saved connection "${this.key}" is not valid`)
             await this.memento.update(this.key, undefined)
         } else {
+            await this.auth.refreshConnectionState(conn)
             return conn
         }
     }

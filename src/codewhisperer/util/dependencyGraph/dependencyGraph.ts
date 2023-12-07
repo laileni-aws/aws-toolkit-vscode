@@ -12,7 +12,6 @@ import path = require('path')
 import { tempDirPath } from '../../../shared/filesystemUtilities'
 import * as CodeWhispererConstants from '../../models/constants'
 import { getLogger } from '../../../shared/logger'
-
 export interface Truncation {
     rootDir: string
     zipFilePath: string
@@ -32,7 +31,15 @@ export const DependencyGraphConstants = {
     as: 'as',
     static: 'static',
     package: 'package',
+    using: 'using',
+    globalusing: 'global using',
     semicolon: ';',
+    equals: '=',
+    require: 'require',
+    require_relative: 'require_relative',
+    load: 'load',
+    include: 'include',
+    extend: 'extend',
 
     /**
      * Regex
@@ -46,10 +53,18 @@ export const DependencyGraphConstants = {
     javaExt: '.java',
     javaBuildExt: '.class',
     jsExt: '.js',
+    tsExt: '.ts',
+    csharpExt: '.cs',
+    jsonExt: '.json',
+    yamlExt: '.yaml',
+    ymlExt: '.yml',
+    tfExt: '.tf',
+    hclExt: '.hcl',
+    rubyExt: '.rb',
 }
 
 export abstract class DependencyGraph {
-    protected _languageId: string = ''
+    protected _languageId: CodeWhispererConstants.PlatformLanguageId = 'plaintext'
     protected _sysPaths: Set<string> = new Set<string>()
     protected _parsedStatements: Set<string> = new Set<string>()
     protected _pickedSourceFiles: Set<string> = new Set<string>()
@@ -61,7 +76,7 @@ export abstract class DependencyGraph {
 
     private _isProjectTruncated = false
 
-    constructor(languageId: string) {
+    constructor(languageId: CodeWhispererConstants.PlatformLanguageId) {
         this._languageId = languageId
     }
 
@@ -114,7 +129,7 @@ export abstract class DependencyGraph {
         let dirPath = this.getBaseDirPath(uri)
         const paths: string[] = [dirPath]
         const projectPath = this.getProjectPath(uri)
-        while (dirPath != projectPath) {
+        while (dirPath !== projectPath) {
             dirPath = path.join(dirPath, '..')
             paths.push(dirPath)
         }

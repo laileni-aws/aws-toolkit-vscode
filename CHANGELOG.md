@@ -1,3 +1,77 @@
+## 2.2.0 2023-12-06
+
+- **Breaking Change** validate that pom.xml is in root directory of project, not anywhere in project
+- **Bug Fix** AWS Toolkit submenus appear in other extension views #4111
+- **Bug Fix** CodeCatalyst: "No handler found" error may occur when opening `vscode://` URI #4105
+- **Bug Fix** CodeWhisperer: Security scans for Java no longer require build artifacts
+- **Bug Fix** Amazon Q: Input prompt gets wrapped to new line which avoids focusing
+
+## 2.1.0 2023-11-30
+
+- **Feature** Use MDE endpoint set by environment variable
+- **Feature** AWS Application Composer is now available from the AWS Toolkit for Visual Studio Code. Visualize and design AWS CloudFormation and AWS SAM applications from your local machine. Use integrations with featured services such as Amazon CodeWhisperer, AWS Step Functions, and AWS SAM to improve your development experience.
+
+## 2.0.0 2023-11-28
+
+- **Bug Fix** CodeWhisperer status bar showing even when not in use
+- **Feature** Auth: Delete SSO connections from quickpick with button on hover
+- **Feature** Support for Amazon Q, your generative AI–powered assistant designed for work that can be tailored to your business, code, data, and operations.
+
+## 1.100.0 2023-11-26
+
+- **Bug Fix** Fix a not connected error when starting connection to CodeCatalyst Dev Environment from link
+- **Feature** CodeWhisperer supports Json, yaml and Tf
+- **Feature** CodeWhisperer security scans support typescript, csharp, json, yaml, tf and hcl files.
+- **Feature** Auth: Redesign Add Connection page to show all options at once
+- **Feature** CodeWhisperer: Uses Generative AI and automated reasoning to rewrite lines of code flagged for security vulnerabilities during a security scan.
+
+## 1.99.0 2023-11-17
+
+- **Feature** CodeWhisperer: status bar lists options when clicked and shows suggestion state
+- **Feature** Don't show "invalid settings.json" message if settings.json is valid but unwritable
+- **Feature** CodeWhisperer: faster code completion by enabling HTTP connection reuse for completions API
+- **Feature** Connect to Amazon CodeCatalyst Dev Environments with IAM Identity Center
+
+## 1.98.0 2023-11-09
+
+- **Bug Fix** CodeWhisperer, CodeCatalyst may require login again after Switching VSCode workspaces
+- **Bug Fix** "Scanning CloudFormation templates..." message `Cancel` button does not fully stop the scan
+- **Bug Fix** ECS: `SimulatePrincipalPolicy` permission is no longer required for users to run `exec command`
+
+## 1.97.0 2023-11-02
+
+- **Bug Fix** CodeWhisperer: fix and improve closing symbols handling (brackets, parenthesis, quotes etc)
+
+## 1.96.0 2023-10-26
+
+- **Bug Fix** SAM debugging: "Invalid (or missing) template file" may occur even when a valid template.yaml is specified by `invokeTarget.templatePath` in the launch config. #2614
+- **Bug Fix** Redshift: The output message is not clear when a sql query is successful but returns no record.
+- **Bug Fix** Redshift: Re-launched connection wizard shows the old (stale) connection.
+- **Bug Fix** `AWS: Add SAM Debug Configuration` command only works the first time it is invoked.
+- **Bug Fix** Improved performance of CloudFormation file watcher startup
+- **Bug Fix** Output panel always opens at VS Code launch.
+- **Feature** Detect and notify about invalid settings.json #3910
+- **Feature** Redshift: "Create Notebook" opens an untitled document instead of prompting to "Save As"
+- **Feature** CloudWatch Logs: Preserve quickpick menu position when loading more items.
+- **Feature** CodeWhisperer: reduce auto-suggestions when there is immediate right context
+
+## 1.95.0 2023-10-17
+
+- **Feature** Amazon Redshift is now available in AWS Explorer. You can author and execute SQL queries from VS Code notebooks, and view your database objects in their Redshift warehouses.
+- **Feature** Public preview for CodeWhisperer Enterprise: Enterprise customers can now customize CodeWhisperer to adopt and suggest code based on organization specific codebases.
+
+## 1.94.0 2023-10-12
+
+- **Feature** CodeWhisperer: improve auto-suggestions for additional languages
+- **Feature** StepFunctions: Support rendering SFN graph with ItemProcessor field
+- **Feature** auth: Adding or switching connections in CodeWhisperer, CodeCatalyst and Explorer is now faster and requires fewer steps
+
+## 1.93.0 2023-10-05
+
+- **Bug Fix** SAM: local debugging of a .NET lambda may fail if `containerbuild=true`
+- **Bug Fix** BuilderID/IdentityCenter: Fix 'Invalid Client' error in the browser when re-authenticating
+- **Feature** CodeWhisperer: remove unnecessary "Proceed to login" prompt
+
 ## 1.92.0 2023-09-29
 
 - **Deprecation** SAM: removed support for Node.js 12.x [Lambda runtime](https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html)

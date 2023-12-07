@@ -143,3 +143,9 @@ export const apprunnerCreateServiceDocsUrl: string = isCloud9()
 // URLs for S3
 // TODO: update docs to add the file viewer feature
 export const s3FileViewerHelpUrl = 'https://docs.aws.amazon.com/toolkit-for-vscode/latest/userguide/s3.html'
+
+//URL for Redshift
+export const redshiftHelpUrl = 'https://docs.aws.amazon.com/toolkit-for-vscode/latest/userguide/redshift.html'
+
+// URL for Amazon Q
+export const amazonQHelpUrl = 'https://aws.amazon.com/q/'

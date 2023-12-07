@@ -112,6 +112,15 @@ const scenarios: TestScenario[] = [
         vscodeMinimum: '1.50.0',
     },
     {
+        runtime: 'dotnet6',
+        displayName: 'dotnet6 (ZIP)',
+        path: 'src/HelloWorld/Function.cs',
+        debugSessionType: 'coreclr',
+        language: 'csharp',
+        dependencyManager: 'cli-package',
+        vscodeMinimum: '1.50.0',
+    },
+    {
         runtime: 'java8.al2',
         displayName: 'java8.al2 (Maven ZIP)',
         path: 'HelloWorldFunction/src/main/java/helloworld/App.java',
@@ -144,7 +153,7 @@ const scenarios: TestScenario[] = [
     {
         runtime: 'nodejs14.x',
         displayName: 'nodejs14.x (Image)',
-        baseImage: `amazon/nodejs14.x-base`,
+        baseImage: 'amazon/nodejs14.x-base',
         path: 'hello-world/app.js',
         debugSessionType: 'pwa-node',
         language: 'javascript',
@@ -154,7 +163,7 @@ const scenarios: TestScenario[] = [
     {
         runtime: 'nodejs16.x',
         displayName: 'nodejs16.x (Image)',
-        baseImage: `amazon/nodejs16.x-base`,
+        baseImage: 'amazon/nodejs16.x-base',
         path: 'hello-world/app.js',
         debugSessionType: 'pwa-node',
         language: 'javascript',
@@ -164,7 +173,7 @@ const scenarios: TestScenario[] = [
     {
         runtime: 'nodejs18.x',
         displayName: 'nodejs18.x (Image)',
-        baseImage: `amazon/nodejs18.x-base`,
+        baseImage: 'amazon/nodejs18.x-base',
         path: 'hello-world/app.mjs',
         debugSessionType: 'pwa-node',
         language: 'javascript',
@@ -208,7 +217,7 @@ const scenarios: TestScenario[] = [
         runtime: 'java8',
         displayName: 'java8 (Maven Image)',
         path: 'HelloWorldFunction/src/main/java/helloworld/App.java',
-        baseImage: `amazon/java8-base`,
+        baseImage: 'amazon/java8-base',
         debugSessionType: 'java',
         language: 'java',
         dependencyManager: 'maven',
@@ -218,7 +227,7 @@ const scenarios: TestScenario[] = [
         runtime: 'java8.al2',
         displayName: 'java8.al2 (Gradle Image)',
         path: 'HelloWorldFunction/src/main/java/helloworld/App.java',
-        baseImage: `amazon/java8.al2-base`,
+        baseImage: 'amazon/java8.al2-base',
         debugSessionType: 'java',
         language: 'java',
         dependencyManager: 'gradle',
@@ -228,10 +237,20 @@ const scenarios: TestScenario[] = [
         runtime: 'java11',
         displayName: 'java11 (Maven Image)',
         path: 'HelloWorldFunction/src/main/java/helloworld/App.java',
-        baseImage: `amazon/java11-base`,
+        baseImage: 'amazon/java11-base',
         debugSessionType: 'java',
         language: 'java',
         dependencyManager: 'maven',
+        vscodeMinimum: '1.50.0',
+    },
+    {
+        runtime: 'dotnet6',
+        displayName: 'dotnet6 (Image)',
+        path: 'src/HelloWorld/Function.cs',
+        baseImage: 'amazon/dotnet6-base',
+        debugSessionType: 'coreclr',
+        language: 'csharp',
+        dependencyManager: 'cli-package',
         vscodeMinimum: '1.50.0',
     },
 ]
@@ -361,7 +380,6 @@ describe('SAM Integration Tests', async function () {
 
         await activateExtensions()
         await testUtils.configureAwsToolkitExtension()
-        await testUtils.configurePythonExtension()
         // await testUtils.configureGoExtension()
 
         testSuiteRoot = await mkdtemp(path.join(projectFolder, 'inttest'))
@@ -382,7 +400,7 @@ describe('SAM Integration Tests', async function () {
         let randomTestScenario: TestScenario
 
         before(async function () {
-            if (scenarios.length == 0) {
+            if (scenarios.length === 0) {
                 throw new Error('There are no scenarios available.')
             }
             randomTestScenario = scenarios[0]
@@ -400,6 +418,20 @@ describe('SAM Integration Tests', async function () {
             await assert.rejects(createSamApplication(runtimeTestRoot, randomTestScenario), 'Promise was not rejected')
         })
     })
+
+    function assertCodeLensReferencesHasSameRoot(codeLens: vscode.CodeLens, expectedUri: vscode.Uri) {
+        assert.ok(codeLens.command, 'CodeLens did not have a command')
+        const command = codeLens.command!
+
+        assert.ok(command.arguments, 'CodeLens command had no arguments')
+        const commandArguments = command.arguments!
+
+        assert.strictEqual(commandArguments.length, 3, 'CodeLens command had unexpected arg count')
+        const params: AddSamDebugConfigurationInput = commandArguments[0]
+        assert.ok(params, 'unexpected non-defined command argument')
+
+        assert.strictEqual(path.dirname(params.rootUri.fsPath), path.dirname(expectedUri.fsPath))
+    }
 
     for (let scenarioIndex = 0; scenarioIndex < scenarios.length; scenarioIndex++) {
         const scenario = scenarios[scenarioIndex]
@@ -469,7 +501,10 @@ describe('SAM Integration Tests', async function () {
                 })
 
                 it('produces an Add Debug Configuration codelens', async function () {
-                    if (semver.lt(vscode.version, scenario.vscodeMinimum)) {
+                    if (
+                        scenario.language === 'csharp' || // TODO
+                        semver.lt(vscode.version, scenario.vscodeMinimum)
+                    ) {
                         this.skip()
                     }
 
@@ -488,9 +523,9 @@ describe('SAM Integration Tests', async function () {
                         case 'python':
                             manifestFile = /^requirements\.txt$/
                             break
-                        case 'csharp':
-                            manifestFile = /^.*\.csproj$/
-                            break
+                        // case 'csharp':
+                        //     manifestFile = /^.*\.csproj$/
+                        //     break
                         case 'go':
                             manifestFile = /^go\.mod$/
                             break
@@ -596,26 +631,12 @@ describe('SAM Integration Tests', async function () {
                     }
 
                     // XXX: force load since template registry seems a bit flakey
-                    await globals.templateRegistry.addItemToRegistry(vscode.Uri.file(cfnTemplatePath))
+                    await (await globals.templateRegistry).addItem(vscode.Uri.file(cfnTemplatePath))
 
                     await startDebugger(scenario, scenarioIndex, target, testConfig, testDisposables, sessionLog)
                 }
             })
         })
-
-        function assertCodeLensReferencesHasSameRoot(codeLens: vscode.CodeLens, expectedUri: vscode.Uri) {
-            assert.ok(codeLens.command, 'CodeLens did not have a command')
-            const command = codeLens.command!
-
-            assert.ok(command.arguments, 'CodeLens command had no arguments')
-            const commandArguments = command.arguments!
-
-            assert.strictEqual(commandArguments.length, 3, 'CodeLens command had unexpected arg count')
-            const params: AddSamDebugConfigurationInput = commandArguments[0]
-            assert.ok(params, 'unexpected non-defined command argument')
-
-            assert.strictEqual(path.dirname(params.rootUri.fsPath), path.dirname(expectedUri.fsPath))
-        }
     }
 
     async function createSamApplication(location: string, scenario: TestScenario): Promise<void> {

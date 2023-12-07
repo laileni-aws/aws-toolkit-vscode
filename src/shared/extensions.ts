@@ -21,6 +21,7 @@ export const VSCODE_EXTENSION_ID = {
     go: 'golang.go',
     java: 'redhat.java',
     javadebug: 'vscjava.vscode-java-debug',
+    dotnet: 'ms-dotnettools.csdevkit',
     git: 'vscode.git',
     remotessh: 'ms-vscode-remote.remote-ssh',
 }
@@ -47,4 +48,4 @@ export interface ExtContext {
 /**
  * Version of the .vsix produced by package.ts with the --debug option.
  */
-export const extensionAlphaVersion = '1.99.0-SNAPSHOT'
+export const extensionAlphaVersion = '99.0.0-SNAPSHOT'

@@ -7,10 +7,12 @@ import {
     CodewhispererCompletionType,
     CodewhispererLanguage,
     CodewhispererGettingStartedTask,
+    CodewhispererAutomatedTriggerType,
+    CodewhispererTriggerType,
 } from '../../shared/telemetry/telemetry.gen'
 import { GenerateRecommendationsRequest, ListRecommendationsRequest, Recommendation } from '../client/codewhisperer'
 import { Position } from 'vscode'
-import { CodeWhispererSupplementalContext } from './supplementalContext/supplementalContextUtil'
+import { CodeWhispererSupplementalContext } from '../models/model'
 
 const performance = globalThis.performance ?? require('perf_hooks').performance
 
@@ -19,14 +21,19 @@ class CodeWhispererSession {
 
     // Per-session states
     sessionId = ''
+    requestIdList: string[] = []
     startPos = new Position(0, 0)
+    startCursorOffset = 0
     leftContextOfCurrentLine = ''
     requestContext: {
         request: ListRecommendationsRequest | GenerateRecommendationsRequest
         supplementalMetadata: Omit<CodeWhispererSupplementalContext, 'supplementalContextItems'> | undefined
     } = { request: {} as any, supplementalMetadata: {} as any }
-    language: CodewhispererLanguage = 'java'
+    language: CodewhispererLanguage = 'python'
     taskType: CodewhispererGettingStartedTask | undefined
+    triggerType: CodewhispererTriggerType = 'OnDemand'
+    autoTriggerType: CodewhispererAutomatedTriggerType | undefined
+
     // Various states of recommendations
     recommendations: Recommendation[] = []
     suggestionStates = new Map<number, string>()
@@ -68,6 +75,20 @@ class CodeWhispererSession {
 
     getCompletionType(index: number): CodewhispererCompletionType {
         return this.completionTypes.get(index) || 'Line'
+    }
+
+    reset() {
+        this.sessionId = ''
+        this.requestContext = { request: {} as any, supplementalMetadata: {} as any }
+        this.requestIdList = []
+        this.startPos = new Position(0, 0)
+        this.startCursorOffset = 0
+        this.leftContextOfCurrentLine = ''
+        this.language = 'python'
+        this.triggerType = 'OnDemand'
+        this.recommendations = []
+        this.suggestionStates.clear()
+        this.completionTypes.clear()
     }
 }
 

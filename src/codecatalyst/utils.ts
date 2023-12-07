@@ -66,16 +66,9 @@ export function isInDevEnv(): boolean {
     return !!getCodeCatalystDevEnvId()
 }
 
-export const getStartedCommand = Commands.register('aws.codecatalyst.getStarted', setupCodeCatalystBuilderId)
-
-export async function setupCodeCatalystBuilderId(authProvider: CodeCatalystAuthenticationProvider) {
-    let conn = authProvider.activeConnection ?? (await authProvider.promptNotConnected())
-
-    if (authProvider.auth.getConnectionState(conn) === 'invalid') {
-        conn = await authProvider.auth.reauthenticate(conn)
+export const getStartedCommand = Commands.register(
+    'aws.codecatalyst.getStarted',
+    (auth: CodeCatalystAuthenticationProvider) => {
+        auth.connectToAwsBuilderId()
     }
-
-    if (!(await authProvider.isConnectionOnboarded(conn, true))) {
-        await authProvider.promptOnboarding()
-    }
-}
+)

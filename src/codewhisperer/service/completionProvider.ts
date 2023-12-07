@@ -8,7 +8,6 @@ import * as CodeWhispererConstants from '../models/constants'
 import { runtimeLanguageContext } from '../util/runtimeLanguageContext'
 import { Recommendation } from '../client/codewhisperer'
 import { LicenseUtil } from '../util/licenseUtil'
-import { TelemetryHelper } from '../util/telemetryHelper'
 import { RecommendationHandler } from './recommendationHandler'
 import { session } from '../util/codeWhispererSession'
 /**
@@ -43,8 +42,8 @@ export function getCompletionItem(
     completionItem.sortText = String(recommendationIndex + 1).padStart(10, '0')
     completionItem.range = new vscode.Range(start, position)
     const languageContext = runtimeLanguageContext.getLanguageContext(document.languageId)
-    let references = undefined
-    if (recommendationDetail.references != undefined && recommendationDetail.references.length > 0) {
+    let references: typeof recommendationDetail.references
+    if (recommendationDetail.references !== undefined && recommendationDetail.references.length > 0) {
         references = recommendationDetail.references
         const licenses = [
             ...new Set(references.map(r => `[${r.licenseName}](${LicenseUtil.getLicenseHtml(r.licenseName)})`)),
@@ -60,7 +59,7 @@ export function getCompletionItem(
             recommendation,
             RecommendationHandler.instance.requestId,
             session.sessionId,
-            TelemetryHelper.instance.triggerType,
+            session.triggerType,
             session.getCompletionType(recommendationIndex),
             languageContext.language,
             references,

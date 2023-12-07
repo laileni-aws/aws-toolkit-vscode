@@ -81,8 +81,27 @@ You can also use these NPM tasks (see `npm run` for the full list):
 
 -   Project patterns and practices: [CODE_GUIDELINES.md](./docs/CODE_GUIDELINES.md)
 -   [VS Code Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+    -   [Webview guidance](https://code.visualstudio.com/api/ux-guidelines/webviews)
 -   [VS Code API Documentation](https://code.visualstudio.com/api/references/vscode-api)
 -   [VS Code Extension Capabilities](https://code.visualstudio.com/api/extension-capabilities/common-capabilities)
+
+### Prerelease artifacts
+
+-   CI automatically publishes GitHub [prereleases](https://github.com/aws/aws-toolkit-vscode/releases)
+    for `master` and `feature/x` branches, including `.vsix` artifacts which can
+    be used to test the latest build for that branch. Each prerelease and its
+    artifact are continually updated from the HEAD of its branch.
+-   PR artifacts: each pull request is processed by an AWS CodeBuild job which
+    runs all tests and provides the build result via the _Details_ link as shown
+    below.
+    -   <img src="./docs/images/ci-artifact.png" alt="CI artifact" width="512"/>
+
+### Debug failing integration tests
+
+-   Check for recent changes in each of these projects:
+    -   https://github.com/microsoft/vscode-python (releases)
+    -   https://github.com/aws/aws-sam-cli/releases
+    -   https://github.com/aws/aws-sam-cli-app-templates/ (`master` branch, not releases!)
 
 ### Technical notes
 
@@ -118,6 +137,16 @@ You can also use these NPM tasks (see `npm run` for the full list):
         ```
     2. Put a breakpoint on it.
     3. Run all tests.
+
+---
+
+### Browser
+
+The AWS Toolkit VSCode extension has a support (with limited functionality) for running in the browser, eg [vscode.dev](https://vscode.dev).
+
+See [browser.md](./docs/browser.md) for working with the browser implementation of the extension.
+
+---
 
 ### Test
 
@@ -160,13 +189,6 @@ To run a single test in VSCode, do any one of:
     rootTestsPath: __dirname + '/shared/sam/debugger/'
     ```
 
-### Debug failing integration tests
-
--   Check for recent changes in each of these projects:
-    -   https://github.com/microsoft/vscode-python (releases)
-    -   https://github.com/aws/aws-sam-cli/releases
-    -   https://github.com/aws/aws-sam-cli-app-templates/ (`master` branch, not releases!)
-
 ### Browser Support
 
 Running the extension in the browser (eg: [vscode.dev](https://vscode.dev/)).
@@ -181,17 +203,6 @@ You can find the coverage report at `./coverage/index.html` after running the te
 -   Instrument built code with `npm run instrument`
 -   Exercise the code (`Extension Tests`, `Integration Tests`, etc.)
 -   Generate a report with `npm run report`
-
-### Prerelease artifacts
-
--   CI automatically publishes GitHub [prereleases](https://github.com/aws/aws-toolkit-vscode/releases)
-    for `master` and `feature/x` branches, including `.vsix` artifacts which can
-    be used to test the latest build for that branch. Each prerelease and its
-    artifact are continually updated from the HEAD of its branch.
--   PR artifacts: each pull request is processed by an AWS CodeBuild job which
-    runs all tests and provides the build result via the _Details_ link as shown
-    below.
-    -   <img src="./docs/images/ci-artifact.png" alt="CI artifact" width="512"/>
 
 ### CodeCatalyst Blueprints
 
@@ -211,10 +222,27 @@ To send a pull request:
 2. Modify the source; focus on the specific change you are contributing. If you also reformat all the code, it will be hard for us to focus on your change.
     - Read the [project guidelines](#guidelines), this is very important for non-trivial changes.
 3. Commit to your fork [using clear commit messages](#commit-messages).
-4. Update the changelog by running `npm run newChange`.
-    - Note: the main purpose of the `newChange` task is to avoid merge conflicts.
+4. Update the [changelog](#changelog).
 5. [Create a pull request](https://help.github.com/articles/creating-a-pull-request/).
 6. Pay attention to any CI failures reported in the pull request.
+
+### Changelog
+
+Pull requests that change customer-facing behavior (in any _describable_ way) should include
+a changelog item(s). Update the changelog via:
+
+    npm run newChange
+
+Guidelines:
+
+-   Describe the change in a way that is meaningful to the _customer_.
+    -   ❌ `Remove the cache when the connection wizard is re-launched`
+    -   ✅ `Connection wizard sometimes shows the old (stale) connection`
+-   If there are multiple unrelated changes, run `npm run newChange` for each change.
+-   **Bug Fix** changes should describe the _problem being fixed_. This tends to produce simpler,
+    more-readable descriptions. It's redundant to mention "Fixed" in the description. Example:
+    -   ❌ `Fixed S3 bug which caused filenames to be uppercase`
+    -   ✅ `S3 filenames are always uppercase`
 
 ### Commit messages
 
@@ -228,7 +256,6 @@ Follow these [commit message guidelines](https://cbea.ms/git-commit/):
     -   Imperative voice ("Fix bug", not "Fixed"/"Fixes"/"Fixing").
 -   Body: for non-trivial or uncommon changes, explain your motivation for the
     change and contrast your implementation with previous behavior.
-
     -   Often you can save a _lot_ of words by using this simple template:
         ```
         Problem: …
@@ -275,18 +302,7 @@ then following the log with:
 
 ### Telemetry
 
-See [aws-toolkit-common/telemetry](https://github.com/aws/aws-toolkit-common/tree/main/telemetry#telemetry) for full details about defining telemetry metrics.
-
--   You can define new metrics during development by adding items to
-    [telemetry/vscodeTelemetry.json](https://github.com/aws/aws-toolkit-vscode/blob/21ca0fca26d677f105caef81de2638b2e4796804/src/shared/telemetry/vscodeTelemetry.json).
-    -   Building the project will trigger the `generateClients` build task, which generates new symbols in `shared/telemetry/telemetry`, which you can import via:
-        ```
-        import { telemetry } from '../../shared/telemetry/telemetry'
-        ```
-    -   The metrics defined in `vscodeTelemetry.json` should be upstreamed to [aws-toolkit-common](https://github.com/aws/aws-toolkit-common/blob/main/telemetry/definitions/commonDefinitions.json) after launch (at the latest).
--   Metrics are dropped (not posted to the service) if the extension is running in [CI or other
-    automation tasks](https://github.com/aws/aws-toolkit-vscode/blob/21ca0fca26d677f105caef81de2638b2e4796804/src/shared/vscode/env.ts#L71-L73).
-    -   You can always _test_ telemetry via [assertTelemetry()](https://github.com/aws/aws-toolkit-vscode/blob/21ca0fca26d677f105caef81de2638b2e4796804/src/test/testUtil.ts#L164), regardless of the current environment.
+See [docs/telemetry.md](./docs/telemetry.md) for notes on emitting telemetry in this project.
 
 ### Service Endpoints
 
@@ -300,11 +316,33 @@ Example:
 }
 ```
 
+Overrides specifically for CodeCatalyst can be set using the `aws.dev.codecatalystService` setting. This is a JSON object consisting of keys/values required to override API calls to CodeCatalyst: `region`, `endpoint`, `hostname`, and `gitHostname`. If this setting is present, then all keys need to be explicitly provided.
+
+Example:
+
+```json
+"aws.dev.codecatalystService": {
+    "region": "us-west-2",
+    "endpoint": "https://codecatalyst-gamma.example.com",
+    "hostname": "integ.stage.example.com",
+    "gitHostname": "git.gamma.source.example.com",
+}
+```
+
 ### SAM/CFN ("goformation") JSON schema
 
 See [docs/cfn-schema-support.md](./docs/cfn-schema-support.md) for how to fix
 and improve the JSON schema that provides auto-completion and syntax checking
 of SAM and CloudFormation `template.yaml` files.
+
+### Custom Lint Rules
+
+The package.json 'devDependencies' includes `eslint-plugin-aws-toolkits`. This is a local eslint plugin where we define custom lint rules. Additional lint rules and tests for lint rules can be added to this plugin:
+
+1. Define a new rule in `plugins/eslint-plugin-aws-toolkits/lib/rules`.
+2. Create a test for your rule in `plugins/eslint-plugin-aws-toolkits/test/rules` and run with `npm run test` in the root directory of `eslint-plugin-aws-toolkits`.
+3. Register your rule in `plugins/eslint-plugin-aws-toolkits/index.ts`.
+4. Enable your rule in `.eslintrc`.
 
 ### AWS SDK generator
 
@@ -443,10 +481,9 @@ There are several ways to make pre-production changes available on a "preview" o
 -   **Beta artifacts:** For a "private beta" launch, `src/dev/beta.ts` contains
     logic to check a hardcoded, stable URL serving the latest `.vsix` build for
     the private beta. The hardcoded URL defined in [`dev/config.ts:betaUrl`](https://github.com/aws/aws-toolkit-vscode/blob/d9c27234c0732b021d07e184a865213d6efde8ec/src/dev/config.ts#L9)
-    also forces the Toolkit to declare version `1.999.0` (since "private beta"
-    has no semver and would conflict with the VSCode marketplace version,
-    causing unwanted auto-updating by VSCode). Beta builds of the Toolkit
-    automatically query the URL once per session per day.
+    also forces the Toolkit to declare version `99.0` (since "private beta" has no semver and to
+    avoid unwanted auto-updating from VSCode marketplace). Beta builds of the Toolkit automatically
+    query the URL once per session per day.
 
 ## Code of Conduct
 

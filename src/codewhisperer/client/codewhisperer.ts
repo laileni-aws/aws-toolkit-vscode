@@ -2,23 +2,34 @@
  * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { AWSError, Service } from 'aws-sdk'
-import apiConfig = require('./service-2.json')
-import userApiConfig = require('./user-service-2.json')
+
+import { AWSError, Credentials, Service } from 'aws-sdk'
 import globals from '../../shared/extensionGlobals'
 import * as CodeWhispererClient from './codewhispererclient'
 import * as CodeWhispererUserClient from './codewhispereruserclient'
+import {
+    ListAvailableCustomizationsResponse,
+    ListFeatureEvaluationsRequest,
+    ListFeatureEvaluationsResponse,
+    SendTelemetryEventRequest,
+} from './codewhispereruserclient'
 import * as CodeWhispererConstants from '../models/constants'
 import { ServiceOptions } from '../../shared/awsClientBuilder'
-import { isCloud9 } from '../../shared/extensionUtilities'
+import { hasVendedIamCredentials } from '../../auth/auth'
 import { CodeWhispererSettings } from '../util/codewhispererSettings'
 import { PromiseResult } from 'aws-sdk/lib/request'
-import { Credentials } from 'aws-sdk'
 import { AuthUtil } from '../util/authUtil'
 import { isSsoConnection } from '../../auth/connection'
+import { pageableToCollection } from '../../shared/utilities/collectionUtils'
+import apiConfig = require('./service-2.json')
+import userApiConfig = require('./user-service-2.json')
 import { session } from '../util/codeWhispererSession'
-import { SendTelemetryEventRequest } from './codewhispereruserclient'
 import { getLogger } from '../../shared/logger'
+import { indent } from '../../shared/utilities/textUtilities'
+import { keepAliveHeader } from './agent'
+import { getOptOutPreference } from '../util/commonUtil'
+import * as os from 'os'
+import { getClientId } from '../../shared/telemetry/util'
 
 export type ProgrammingLanguage = Readonly<
     CodeWhispererClient.ProgrammingLanguage | CodeWhispererUserClient.ProgrammingLanguage
@@ -85,7 +96,8 @@ export class DefaultCodeWhispererClient {
                         }
                         // This logic is for backward compatability with legacy SDK v2 behavior for refreshing
                         // credentials. Once the Toolkit adds a file watcher for credentials it won't be needed.
-                        if (isCloud9()) {
+
+                        if (hasVendedIamCredentials()) {
                             req.on('retry', resp => {
                                 if (
                                     resp.error?.code === 'AccessDeniedException' &&
@@ -123,6 +135,7 @@ export class DefaultCodeWhispererClient {
                         if (req.operation === 'generateCompletions') {
                             req.on('build', () => {
                                 req.httpRequest.headers['x-amzn-codewhisperer-optout'] = `${isOptedOut}`
+                                req.httpRequest.headers['Connection'] = keepAliveHeader
                             })
                         }
                     },
@@ -192,12 +205,110 @@ export class DefaultCodeWhispererClient {
             .promise()
     }
 
+    public async listAvailableCustomizations(): Promise<ListAvailableCustomizationsResponse[]> {
+        const client = await this.createUserSdkClient()
+        const requester = async (request: CodeWhispererUserClient.ListAvailableCustomizationsRequest) =>
+            client.listAvailableCustomizations(request).promise()
+        return pageableToCollection(requester, {}, 'nextToken')
+            .promise()
+            .then(resps => {
+                let logStr = 'CodeWhisperer: listAvailableCustomizations API request:'
+                resps.forEach(resp => {
+                    const requestId = resp.$response.requestId
+                    logStr += `\n${indent('RequestID: ', 4)}${requestId},\n${indent('Customizations:', 4)}`
+                    resp.customizations.forEach((c, index) => {
+                        const entry = `${index.toString().padStart(2, '0')}: ${c.name?.trim()}`
+                        logStr += `\n${indent(entry, 8)}`
+                    })
+                })
+                getLogger().debug(logStr)
+                return resps
+            })
+    }
+
     public async sendTelemetryEvent(request: SendTelemetryEventRequest) {
-        if (!AuthUtil.instance.isValidEnterpriseSsoInUse()) {
+        const requestWithCommonFields: SendTelemetryEventRequest = {
+            ...request,
+            optOutPreference: getOptOutPreference(),
+            userContext: {
+                ideCategory: 'VSCODE',
+                operatingSystem: this.getOperatingSystem(),
+                product: 'CodeWhisperer',
+                clientId: await getClientId(globals.context.globalState),
+            },
+        }
+        if (!AuthUtil.instance.isValidEnterpriseSsoInUse() && !globals.telemetry.telemetryEnabled) {
             return
         }
-        const response = await (await this.createUserSdkClient()).sendTelemetryEvent(request).promise()
+        const response = await (await this.createUserSdkClient()).sendTelemetryEvent(requestWithCommonFields).promise()
         getLogger().debug(`codewhisperer: sendTelemetryEvent requestID: ${response.$response.requestId}`)
+    }
+
+    public async listFeatureEvaluations(): Promise<ListFeatureEvaluationsResponse> {
+        const request: ListFeatureEvaluationsRequest = {
+            userContext: {
+                ideCategory: 'VSCODE',
+                operatingSystem: this.getOperatingSystem(),
+                product: 'CodeWhisperer',
+                clientId: await getClientId(globals.context.globalState),
+            },
+        }
+        return (await this.createUserSdkClient()).listFeatureEvaluations(request).promise()
+    }
+
+    private getOperatingSystem(): string {
+        const osId = os.platform() // 'darwin', 'win32', 'linux', etc.
+        if (osId === 'darwin') {
+            return 'MAC'
+        } else if (osId === 'win32') {
+            return 'WINDOWS'
+        } else {
+            return 'LINUX'
+        }
+    }
+
+    /**
+     * @description Use this function to start the transformation job.
+     * @param request
+     * @returns transformationJobId - String id for the Job
+     */
+    public async codeModernizerStartCodeTransformation(
+        request: CodeWhispererUserClient.StartTransformationRequest
+    ): Promise<PromiseResult<CodeWhispererUserClient.StartTransformationResponse, AWSError>> {
+        return (await this.createUserSdkClient()).startTransformation(request).promise()
+    }
+
+    /**
+     * @description Use this function to stop the transformation job.
+     * @param request
+     * @returns transformationJobId - String id for the Job
+     */
+    public async codeModernizerStopCodeTransformation(
+        request: CodeWhispererUserClient.StopTransformationRequest
+    ): Promise<PromiseResult<CodeWhispererUserClient.StopTransformationResponse, AWSError>> {
+        return (await this.createUserSdkClient()).stopTransformation(request).promise()
+    }
+
+    /**
+     * @description Use this function to get the status of the code transformation. We should
+     * be polling this function periodically to get updated results. When this function
+     * returns COMPLETED we know the transformation is done.
+     */
+    public async codeModernizerGetCodeTransformation(
+        request: CodeWhispererUserClient.GetTransformationRequest
+    ): Promise<PromiseResult<CodeWhispererUserClient.GetTransformationResponse, AWSError>> {
+        return (await this.createUserSdkClient()).getTransformation(request).promise()
+    }
+
+    /**
+     * @description After starting a transformation use this function to display the LLM
+     * transformation plan to the user.
+     * @params tranformationJobId - String id returned from StartCodeTransformationResponse
+     */
+    public async codeModernizerGetCodeTransformationPlan(
+        request: CodeWhispererUserClient.GetTransformationPlanRequest
+    ): Promise<PromiseResult<CodeWhispererUserClient.GetTransformationPlanResponse, AWSError>> {
+        return (await this.createUserSdkClient()).getTransformationPlan(request).promise()
     }
 }
 

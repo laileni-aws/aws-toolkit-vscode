@@ -14,6 +14,7 @@ import { runtimeLanguageContext } from '../util/runtimeLanguageContext'
 import { TelemetryHelper } from '../util/telemetryHelper'
 import { AuthUtil } from '../util/authUtil'
 import { CodeWhispererUserGroupSettings } from '../util/userGroupUtil'
+import { getSelectedCustomization } from '../util/customizationUtil'
 import { codeWhispererClient as client } from '../client/codewhisperer'
 import { isAwsError } from '../../shared/errors'
 
@@ -121,6 +122,7 @@ export class CodeWhispererCodeCoverageTracker {
         }
         const percentCount = ((acceptedTokens / totalTokens) * 100).toFixed(2)
         const percentage = Math.round(parseInt(percentCount))
+        const selectedCustomization = getSelectedCustomization()
         telemetry.codewhisperer_codePercentage.emit({
             codewhispererTotalTokens: totalTokens,
             codewhispererLanguage: this._language,
@@ -128,13 +130,16 @@ export class CodeWhispererCodeCoverageTracker {
             codewhispererPercentage: percentage ? percentage : 0,
             successCount: this._serviceInvocationCount,
             codewhispererUserGroup: CodeWhispererUserGroupSettings.getUserGroup().toString(),
+            codewhispererCustomizationArn: selectedCustomization.arn === '' ? undefined : selectedCustomization.arn,
         })
+
         client
             .sendTelemetryEvent({
                 telemetryEvent: {
                     codeCoverageEvent: {
+                        customizationArn: selectedCustomization.arn === '' ? undefined : selectedCustomization.arn,
                         programmingLanguage: {
-                            languageName: this._language,
+                            languageName: runtimeLanguageContext.toRuntimeLanguage(this._language),
                         },
                         acceptedCharacterCount: acceptedTokens,
                         totalCharacterCount: totalTokens,
@@ -238,7 +243,7 @@ export class CodeWhispererCodeCoverageTracker {
         this.addTotalTokens(e.document.fileName, content.text.length)
     }
 
-    public static readonly instances = new Map<string, CodeWhispererCodeCoverageTracker>()
+    public static readonly instances = new Map<CodewhispererLanguage, CodeWhispererCodeCoverageTracker>()
 
     public static getTracker(
         language: string,
@@ -247,12 +252,12 @@ export class CodeWhispererCodeCoverageTracker {
         if (!runtimeLanguageContext.isLanguageSupported(language)) {
             return undefined
         }
-        const cwsprLanguage = runtimeLanguageContext.mapVscLanguageToCodeWhispererLanguage(language)
+        const cwsprLanguage = runtimeLanguageContext.normalizeLanguage(language)
         if (!cwsprLanguage) {
             return undefined
         }
-        const instance = this.instances.get(language) ?? new this(cwsprLanguage)
-        this.instances.set(language, instance)
+        const instance = this.instances.get(cwsprLanguage) ?? new this(cwsprLanguage)
+        this.instances.set(cwsprLanguage, instance)
         return instance
     }
 }

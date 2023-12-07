@@ -27,6 +27,7 @@ import {
     getToolkitEnvironmentDetails,
     initializeComputeRegion,
     isCloud9,
+    isSageMaker,
     showQuickStartWebview,
     showWelcomeMessage,
 } from './shared/extensionUtilities'
@@ -51,7 +52,11 @@ import { activate as activateEcs } from './ecs/activation'
 import { activate as activateAppRunner } from './apprunner/activation'
 import { activate as activateIot } from './iot/activation'
 import { activate as activateDev } from './dev/activation'
+import { activate as activateApplicationComposer } from './applicationcomposer/activation'
+import { activate as activateRedshift } from './redshift/activation'
 import { CredentialsStore } from './auth/credentials/store'
+import { activate as activateCWChat } from './amazonq/activation'
+import { activate as activateQGumby } from './amazonqGumby/activation'
 import { getSamCliContext } from './shared/sam/cli/samCliContext'
 import { Ec2CredentialsProvider } from './auth/providers/ec2CredentialsProvider'
 import { EnvVarsCredentialsProvider } from './auth/providers/envVarsCredentialsProvider'
@@ -59,25 +64,31 @@ import { EcsCredentialsProvider } from './auth/providers/ecsCredentialsProvider'
 import { SchemaService } from './shared/schemas'
 import { AwsResourceManager } from './dynamicResources/awsResourceManager'
 import globals, { initialize } from './shared/extensionGlobals'
-import { join } from 'path'
 import { Experiments, Settings } from './shared/settings'
 import { isReleaseVersion } from './shared/vscode/env'
-import { Commands, registerErrorHandler } from './shared/vscode/commands2'
-import { ToolkitError, isUserCancelledError, resolveErrorMessageToDisplay } from './shared/errors'
-import { Logging } from './shared/logger/commands'
+import { Commands, registerErrorHandler as registerCommandErrorHandler } from './shared/vscode/commands2'
 import { UriHandler } from './shared/vscode/uriHandler'
 import { telemetry } from './shared/telemetry/telemetry'
 import { Auth } from './auth/auth'
-import { showMessageWithUrl } from './shared/utilities/messages'
 import { openUrl } from './shared/utilities/vsCodeUtils'
+import { isUserCancelledError, resolveErrorMessageToDisplay, ToolkitError } from './shared/errors'
+import { Logging } from './shared/logger/commands'
+import { showMessageWithUrl, showViewLogsMessage } from './shared/utilities/messages'
+import { registerWebviewErrorHandler } from './webviews/server'
+import { initializeManifestPaths } from './extensionShared'
+import { ChildProcess } from './shared/utilities/childProcess'
+import { initializeNetworkAgent } from './codewhisperer/client/agent'
 
 let localize: nls.LocalizeFunc
 
 export async function activate(context: vscode.ExtensionContext) {
+    initializeNetworkAgent()
     await initializeComputeRegion()
     const activationStartedOn = Date.now()
     localize = nls.loadMessageBundle()
+
     initialize(context)
+    globals.machineId = await getMachineId()
     initializeManifestPaths(context)
 
     const toolkitOutputChannel = vscode.window.createOutputChannel(
@@ -89,9 +100,13 @@ export async function activate(context: vscode.ExtensionContext) {
     )
     globals.outputChannel = toolkitOutputChannel
 
-    registerErrorHandler((info, error) => {
+    registerCommandErrorHandler((info, error) => {
         const defaultMessage = localize('AWS.generic.message.error', 'Failed to run command: {0}', info.id)
-        handleError(error, info.id, defaultMessage)
+        logAndShowError(error, info.id, defaultMessage)
+    })
+
+    registerWebviewErrorHandler((error: unknown, webviewId: string, command: string) => {
+        logAndShowWebviewError(error, webviewId, command)
     })
 
     if (isCloud9()) {
@@ -123,12 +138,15 @@ export async function activate(context: vscode.ExtensionContext) {
         globals.sdkClientBuilder = new DefaultAWSClientBuilder(awsContext)
         globals.schemaService = new SchemaService()
         globals.resourceManager = new AwsResourceManager(context)
+        // Create this now, but don't call vscode.window.registerUriHandler() until after all
+        // Toolkit services have a chance to register their path handlers. #4105
+        globals.uriHandler = new UriHandler()
 
         const settings = Settings.instance
         const experiments = Experiments.instance
 
-        await initializeCredentials(context, awsContext, loginManager)
         await activateTelemetry(context, awsContext, settings)
+        await initializeCredentials(context, awsContext, loginManager)
 
         experiments.onDidChange(({ key }) => {
             telemetry.aws_experimentActivation.run(span => {
@@ -140,18 +158,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
         await globals.schemaService.start()
         awsFiletypes.activate()
-
-        globals.uriHandler = new UriHandler()
-        context.subscriptions.push(
-            vscode.window.registerUriHandler({
-                handleUri: uri =>
-                    telemetry.runRoot(() => {
-                        telemetry.record({ source: 'UriHandler' })
-
-                        return globals.uriHandler.handleUri(uri)
-                    }),
-            })
-        )
 
         const extContext: ExtContext = {
             extensionContext: context,
@@ -203,11 +209,12 @@ export async function activate(context: vscode.ExtensionContext) {
             })
         )
 
-        await codecatalyst.activate(extContext)
+        // do not enable codecatalyst for sagemaker
+        if (!isSageMaker()) {
+            await codecatalyst.activate(extContext)
+        }
 
         await activateCloudFormationTemplateRegistry(context)
-
-        await activateCodeWhisperer(extContext)
 
         await activateAwsExplorer({
             context: extContext,
@@ -215,6 +222,8 @@ export async function activate(context: vscode.ExtensionContext) {
             toolkitOutputChannel,
             remoteInvokeOutputChannel,
         })
+
+        await activateCodeWhisperer(extContext)
 
         await activateAppRunner(extContext)
 
@@ -245,11 +254,31 @@ export async function activate(context: vscode.ExtensionContext) {
 
         await activateSchemas(extContext)
 
+        if (!isCloud9()) {
+            await activateCWChat(extContext.extensionContext)
+            await activateQGumby(extContext)
+            await activateApplicationComposer(context)
+        }
+
         await activateStepFunctions(context, awsContext, toolkitOutputChannel)
+
+        await activateRedshift(extContext)
+
+        context.subscriptions.push(
+            vscode.window.registerUriHandler({
+                handleUri: uri =>
+                    telemetry.runRoot(() => {
+                        telemetry.record({ source: 'UriHandler' })
+
+                        return globals.uriHandler.handleUri(uri)
+                    }),
+            })
+        )
 
         showWelcomeMessage(context)
 
-        recordToolkitInitialization(activationStartedOn, getLogger())
+        const settingsValid = await checkSettingsHealth(settings)
+        recordToolkitInitialization(activationStartedOn, settingsValid, getLogger())
 
         if (!isReleaseVersion()) {
             globals.telemetry.assertPassiveTelemetry(globals.didReload)
@@ -273,40 +302,10 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 }
 
-// This is only being used for errors from commands although there's plenty of other places where it
-// could be used. It needs to be apart of some sort of `core` module that is guaranteed to initialize
-// prior to every other Toolkit component. Logging and telemetry would fit well within this core module.
-async function handleError(error: unknown, topic: string, defaultMessage: string) {
-    if (isUserCancelledError(error)) {
-        getLogger().verbose(`${topic}: user cancelled`)
-        return
-    }
-    const logsItem = localize('AWS.generic.message.viewLogs', 'View Logs...')
-    const logId = getLogger().error(`${topic}: %s`, error)
-    const message = resolveErrorMessageToDisplay(error, defaultMessage)
-
-    if (error instanceof ToolkitError && error.documentationUri) {
-        await showMessageWithUrl(message, error.documentationUri, 'View Documentation', 'error')
-    } else {
-        await vscode.window.showErrorMessage(message, logsItem).then(async resp => {
-            if (resp === logsItem) {
-                await Logging.declared.viewLogsAtMessage.execute(logId)
-            }
-        })
-    }
-}
-
 export async function deactivate() {
     await codewhispererShutdown()
     await globals.telemetry.shutdown()
     await globals.resourceManager.dispose()
-}
-
-function initializeManifestPaths(extensionContext: vscode.ExtensionContext) {
-    globals.manifestPaths.endpoints = extensionContext.asAbsolutePath(join('resources', 'endpoints.json'))
-    globals.manifestPaths.lambdaSampleRequests = extensionContext.asAbsolutePath(
-        join('resources', 'vs-lambda-sample-request-manifest.xml')
-    )
 }
 
 function initializeCredentialsProviderManager() {
@@ -325,12 +324,16 @@ function makeEndpointsProvider() {
     }
 }
 
-function recordToolkitInitialization(activationStartedOn: number, logger?: Logger) {
+function recordToolkitInitialization(activationStartedOn: number, settingsValid: boolean, logger?: Logger) {
     try {
         const activationFinishedOn = Date.now()
         const duration = activationFinishedOn - activationStartedOn
 
-        telemetry.toolkit_init.emit({ duration })
+        if (settingsValid) {
+            telemetry.toolkit_init.emit({ duration })
+        } else {
+            telemetry.toolkit_init.emit({ duration, result: 'Failed', reason: 'UserSettings' })
+        }
     } catch (err) {
         logger?.error(err as Error)
     }
@@ -363,6 +366,86 @@ function wrapWithProgressForCloud9(channel: vscode.OutputChannel): (typeof vscod
             return task(newProgress, token)
         })
     }
+}
+
+/**
+ * Logs the error. Then determines what kind of error message should be shown, if
+ * at all.
+ *
+ * @param error The error itself
+ * @param topic The prefix of the error message
+ * @param defaultMessage The message to show if once cannot be resolved from the given error
+ *
+ * SIDE NOTE:
+ * This is only being used for errors from commands and webview, there's plenty of other places
+ * (explorer, nodes, ...) where it could be used. It needs to be apart of some sort of `core`
+ * module that is guaranteed to initialize prior to every other Toolkit component.
+ * Logging and telemetry would fit well within this core module.
+ */
+export async function logAndShowError(error: unknown, topic: string, defaultMessage: string) {
+    if (isUserCancelledError(error)) {
+        getLogger().verbose(`${topic}: user cancelled`)
+        return
+    }
+    const logsItem = localize('AWS.generic.message.viewLogs', 'View Logs...')
+    const logId = getLogger().error(`${topic}: %s`, error)
+    const message = resolveErrorMessageToDisplay(error, defaultMessage)
+
+    if (error instanceof ToolkitError && error.documentationUri) {
+        await showMessageWithUrl(message, error.documentationUri, 'View Documentation', 'error')
+    } else {
+        await vscode.window.showErrorMessage(message, logsItem).then(async resp => {
+            if (resp === logsItem) {
+                await Logging.declared.viewLogsAtMessage.execute(logId)
+            }
+        })
+    }
+}
+
+/**
+ * Show a webview related error to the user + button that links to the logged error
+ *
+ * @param err The error that was thrown in the backend
+ * @param webviewId Arbitrary value that identifies which webview had the error
+ * @param command The high level command/function that was run which triggered the error
+ */
+export function logAndShowWebviewError(err: unknown, webviewId: string, command: string) {
+    // HACK: The following implementation is a hack, influenced by the implementation of handleError().
+    // The userFacingError message will be seen in the UI, and the detailedError message will provide the
+    // detailed information in the logs.
+    const detailedError = ToolkitError.chain(err, `Webview backend command failed: "${command}()"`)
+    const userFacingError = ToolkitError.chain(detailedError, 'Webview error')
+    logAndShowError(userFacingError, `webviewId="${webviewId}"`, 'Webview error')
+}
+
+async function checkSettingsHealth(settings: Settings): Promise<boolean> {
+    const r = await settings.isValid()
+    switch (r) {
+        case 'invalid': {
+            const msg = 'Failed to access settings. Check settings.json for syntax errors.'
+            const openSettingsItem = 'Open settings.json'
+            showViewLogsMessage(msg, 'error', [openSettingsItem]).then(async resp => {
+                if (resp === openSettingsItem) {
+                    vscode.commands.executeCommand('workbench.action.openSettingsJson')
+                }
+            })
+            return false
+        }
+        // Don't show a message for 'nowrite' because:
+        //  - settings.json may intentionally be readonly. #4043
+        //  - vscode will show its own error if settings.json cannot be written.
+        //
+        // Note: isValid() already logged a warning.
+        case 'nowrite':
+        case 'ok':
+        default:
+            return true
+    }
+}
+
+async function getMachineId(): Promise<string> {
+    const proc = new ChildProcess('hostname', [], { collect: true, logging: 'no' })
+    return (await proc.run()).stdout.trim() ?? 'unknown-host'
 }
 
 // Unique extension entrypoint names, so that they can be obtained from the webpack bundle

@@ -11,11 +11,11 @@ import * as CodeWhispererConstants from '../../../codewhisperer/models/constants
 import { CodeWhispererUserGroupSettings } from '../../../codewhisperer/util/userGroupUtil'
 import {
     CodewhispererCompletionType,
-    CodewhispererServiceInvocation,
     CodewhispererSuggestionState,
     CodewhispererUserDecision,
 } from '../../../shared/telemetry/telemetry.gen'
 import { Completion } from '../../../codewhisperer/client/codewhispereruserclient'
+import { session } from '../../../codewhisperer/util/codeWhispererSession'
 
 // TODO: improve and move the following test utils to codewhisperer/testUtils.ts
 function aUserDecision(
@@ -37,17 +37,6 @@ function aUserDecision(
     }
 }
 
-function aServiceInvocation(): CodewhispererServiceInvocation {
-    return {
-        codewhispererCursorOffset: 0,
-        codewhispererLanguage: 'python',
-        codewhispererLineNumber: 0,
-        codewhispererRequestId: 'aFakeRequestId',
-        codewhispererTriggerType: 'OnDemand',
-        codewhispererUserGroup: 'Control',
-    }
-}
-
 function aCompletion(): Completion {
     return {
         content: 'aFakeContent',
@@ -62,9 +51,7 @@ describe('telemetryHelper', function () {
             sut = new TelemetryHelper()
         })
 
-        it('should return Block and Accept', function () {
-            sut.sessionInvocations.push(aServiceInvocation())
-
+        it('should return Line and Accept', function () {
             const decisions: CodewhispererUserDecision[] = [
                 aUserDecision('Line', 0, 'Accept'),
                 aUserDecision('Line', 1, 'Discard'),
@@ -74,13 +61,11 @@ describe('telemetryHelper', function () {
 
             const actual = sut.aggregateUserDecisionByRequest(decisions, 'aFakeRequestId', 'aFakeSessionId')
             assert.ok(actual)
-            assert.strictEqual(actual?.codewhispererCompletionType, 'Block')
+            assert.strictEqual(actual?.codewhispererCompletionType, 'Line')
             assert.strictEqual(actual?.codewhispererSuggestionState, 'Accept')
         })
 
         it('should return Line and Reject', function () {
-            sut.sessionInvocations.push(aServiceInvocation())
-
             const decisions: CodewhispererUserDecision[] = [
                 aUserDecision('Line', 0, 'Discard'),
                 aUserDecision('Line', 1, 'Reject'),
@@ -95,8 +80,6 @@ describe('telemetryHelper', function () {
         })
 
         it('should return Block and Accept', function () {
-            sut.sessionInvocations.push(aServiceInvocation())
-
             const decisions: CodewhispererUserDecision[] = [
                 aUserDecision('Block', 0, 'Discard'),
                 aUserDecision('Block', 1, 'Accept'),
@@ -117,13 +100,12 @@ describe('telemetryHelper', function () {
         beforeEach(function () {
             resetCodeWhispererGlobalVariables()
             sut = new TelemetryHelper()
-            sut.sessionInvocations.push(aServiceInvocation())
             CodeWhispererUserGroupSettings.instance.userGroup = CodeWhispererConstants.UserGroup.Control
         })
 
-        it('should return Block and Accept', function () {
+        it('should return Line and Accept', function () {
             sut.recordUserDecisionTelemetry(
-                'aFakeRequestId',
+                ['aFakeRequestId', 'aFakeRequestId', 'aFakeRequestId2'],
                 'aFakeSessionId',
                 [aCompletion(), aCompletion(), aCompletion(), aCompletion()],
                 0,
@@ -149,14 +131,15 @@ describe('telemetryHelper', function () {
                 codewhispererSuggestionImportCount: 0,
                 codewhispererSuggestionState: 'Accept',
                 codewhispererUserGroup: 'Control',
-                codewhispererCompletionType: 'Block',
+                codewhispererCompletionType: 'Line',
                 codewhispererTypeaheadLength: 0,
+                codewhispererCharactersAccepted: aCompletion().content.length,
             })
         })
 
         it('should return Line and Accept 2', function () {
             sut.recordUserDecisionTelemetry(
-                'aFakeRequestId',
+                ['aFakeRequestId', 'aFakeRequestId', 'aFakeRequestId2'],
                 'aFakeSessionId',
                 [aCompletion(), aCompletion(), aCompletion(), aCompletion()],
                 3,
@@ -184,12 +167,13 @@ describe('telemetryHelper', function () {
                 codewhispererUserGroup: 'Control',
                 codewhispererCompletionType: 'Line',
                 codewhispererTypeaheadLength: 0,
+                codewhispererCharactersAccepted: aCompletion().content.length,
             })
         })
 
-        it('should return Block and Reject', function () {
+        it('should return Line and Reject', function () {
             sut.recordUserDecisionTelemetry(
-                'aFakeRequestId',
+                ['aFakeRequestId', 'aFakeRequestId', 'aFakeRequestId2'],
                 'aFakeSessionId',
                 [aCompletion(), aCompletion(), aCompletion(), aCompletion()],
                 -1,
@@ -202,7 +186,7 @@ describe('telemetryHelper', function () {
                 ])
             )
 
-            sut.sendUserTriggerDecisionTelemetry('aFakeSessionId', aCompletion().content, 0)
+            sut.sendUserTriggerDecisionTelemetry('aFakeSessionId', '', 0)
             const assertTelemetry = assertTelemetryCurried('codewhisperer_userTriggerDecision')
             assertTelemetry({
                 codewhispererSessionId: 'aFakeSessionId',
@@ -217,6 +201,7 @@ describe('telemetryHelper', function () {
                 codewhispererUserGroup: 'Control',
                 codewhispererCompletionType: 'Line',
                 codewhispererTypeaheadLength: 0,
+                codewhispererCharactersAccepted: 0,
             })
         })
     })
@@ -280,14 +265,14 @@ describe('telemetryHelper', function () {
 
             const telemetryHelper = new TelemetryHelper()
             const response = [{ content: "print('Hello')" }]
-            const requestId = 'test_x'
+            const requestIdList = ['test_x', 'test_x', 'test_y']
             const sessionId = 'test_x'
-            telemetryHelper.triggerType = 'AutoTrigger'
+            session.triggerType = 'AutoTrigger'
             const assertTelemetry = assertTelemetryCurried('codewhisperer_userDecision')
             const suggestionState = new Map<number, string>([[0, 'Showed']])
             const completionTypes = new Map<number, CodewhispererCompletionType>([[0, 'Line']])
             telemetryHelper.recordUserDecisionTelemetry(
-                requestId,
+                requestIdList,
                 sessionId,
                 response,
                 0,

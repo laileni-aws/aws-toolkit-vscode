@@ -6,19 +6,32 @@
 import * as vscode from 'vscode'
 import * as sinon from 'sinon'
 import * as codewhispererClient from '../../codewhisperer/client/codewhisperer'
-import { vsCodeState, AcceptedSuggestionEntry } from '../../codewhisperer/models/model'
+import {
+    vsCodeState,
+    AcceptedSuggestionEntry,
+    CodeScanIssue,
+    CodeSuggestionsState,
+} from '../../codewhisperer/models/model'
 import { MockDocument } from '../fake/fakeDocument'
 import { getLogger } from '../../shared/logger'
 import { CodeWhispererCodeCoverageTracker } from '../../codewhisperer/tracker/codewhispererCodeCoverageTracker'
 import globals from '../../shared/extensionGlobals'
 import { session } from '../../codewhisperer/util/codeWhispererSession'
+import { DefaultAWSClientBuilder, ServiceOptions } from '../../shared/awsClientBuilder'
+import { FakeAwsContext } from '../utilities/fakeAwsContext'
+import { spy } from '../utilities/mockito'
+import { Service } from 'aws-sdk'
+import userApiConfig = require('./../../codewhisperer/client/user-service-2.json')
+import CodeWhispererUserClient = require('../../codewhisperer/client/codewhispereruserclient')
+import { codeWhispererClient } from '../../codewhisperer/client/codewhisperer'
 
 export function resetCodeWhispererGlobalVariables() {
     vsCodeState.isIntelliSenseActive = false
     vsCodeState.isCodeWhispererEditing = false
     CodeWhispererCodeCoverageTracker.instances.clear()
     globals.telemetry.logger.clear()
-    session.language = 'python'
+    session.reset()
+    CodeSuggestionsState.instance.setSuggestionsEnabled(false)
 }
 
 export function createMockDocument(
@@ -138,5 +151,50 @@ export function createTextDocumentChangeEvent(document: vscode.TextDocument, ran
                 text: text,
             },
         ],
+    }
+}
+
+export async function createSpyClient() {
+    const builder = new DefaultAWSClientBuilder(new FakeAwsContext())
+    const clientSpy = spy(
+        (await builder.createAwsService(Service, {
+            apiConfig: userApiConfig,
+        } as ServiceOptions)) as CodeWhispererUserClient
+    )
+    sinon.stub(codeWhispererClient, 'createUserSdkClient').returns(Promise.resolve(clientSpy))
+    return clientSpy
+}
+
+export function createCodeScanIssue(overrides?: Partial<CodeScanIssue>): CodeScanIssue {
+    return {
+        startLine: 0,
+        endLine: 1,
+        comment: 'comment',
+        title: 'title',
+        description: {
+            text: 'description',
+            markdown: 'description',
+        },
+        detectorId: 'language/cool-detector@v1.0',
+        detectorName: 'detectorName',
+        findingId: 'findingId',
+        relatedVulnerabilities: ['CWE-1'],
+        severity: 'High',
+        recommendation: {
+            text: 'recommendationText',
+            url: 'recommendationUrl',
+        },
+        suggestedFixes: [
+            { description: 'fix', code: '@@ -1,1 +1,1 @@\nfirst line\n-second line\n+third line\nfourth line' },
+        ],
+        ...overrides,
+    }
+}
+
+export function createCodeActionContext(): vscode.CodeActionContext {
+    return {
+        diagnostics: [],
+        only: vscode.CodeActionKind.Empty,
+        triggerKind: vscode.CodeActionTriggerKind.Automatic,
     }
 }

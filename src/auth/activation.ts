@@ -8,11 +8,12 @@ import { AwsContext } from '../shared/awsContext'
 import { Auth } from './auth'
 import { LoginManager } from './deprecated/loginManager'
 import { fromString } from './providers/credentials'
-import { registerCommandsWithVSCode } from '../shared/vscode/commands2'
-import { AuthCommandBackend, AuthCommandDeclarations } from './commands'
+import { placeholder } from '../shared/vscode/commands2'
 import { getLogger } from '../shared/logger'
-import { isInDevEnv } from '../codecatalyst/utils'
 import { ExtensionUse } from './utils'
+import { isCloud9 } from '../shared/extensionUtilities'
+import { isInDevEnv } from '../codecatalyst/utils'
+import { showManageConnections } from './ui/vue/show'
 
 export async function initialize(
     extensionContext: vscode.ExtensionContext,
@@ -28,11 +29,7 @@ export async function initialize(
         }
     })
 
-    registerCommandsWithVSCode(
-        extensionContext,
-        AuthCommandDeclarations.instance,
-        new AuthCommandBackend(extensionContext)
-    )
+    extensionContext.subscriptions.push(showManageConnections.register(extensionContext))
 
     showManageConnectionsOnStartup()
 }
@@ -41,17 +38,20 @@ export async function initialize(
  * Show the Manage Connections page when the extension starts up, if it should be shown.
  */
 async function showManageConnectionsOnStartup() {
+    // Do not show connection management to user in certain scenarios.
+    let reason: string = ''
     if (!ExtensionUse.instance.isFirstUse()) {
-        getLogger().debug(
-            'firstStartup: This is not the users first use of the extension, skipping showing Add Connections page.'
-        )
+        reason = 'This is not the users first use of the extension'
+    } else if (isInDevEnv()) {
+        reason = 'The user is in a Dev Evironment'
+    } else if (isCloud9('any')) {
+        reason = 'The user is in Cloud9'
+    }
+    if (reason) {
+        getLogger().debug(`firstStartup: ${reason}. Skipped showing Add Connections page.`)
         return
     }
 
-    if (isInDevEnv()) {
-        getLogger().debug('firstStartup: Detected we are in Dev Env, skipping showing Add Connections page.')
-        return
-    }
-
-    AuthCommandDeclarations.instance.declared.showConnectionsPage.execute('firstStartup')
+    // Show connection management to user
+    showManageConnections.execute(placeholder, 'firstStartup')
 }
