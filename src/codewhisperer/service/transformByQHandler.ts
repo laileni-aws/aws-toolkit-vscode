@@ -18,8 +18,12 @@ import { spawnSync } from 'child_process'
 import AdmZip from 'adm-zip'
 import fetch from '../../common/request'
 import globals from '../../shared/extensionGlobals'
-import { telemetry } from '../../shared/telemetry/telemetry'
+import { CodeTransformPreValidationError, telemetry } from '../../shared/telemetry/telemetry'
 import { ToolkitError } from '../../shared/errors'
+import { codeTransformTelemetryState } from '../../amazonqGumby/telemetry/codeTransformTelemetryState'
+import { calculateTotalLatency } from '../../amazonqGumby/telemetry/codeTransformTelemetry'
+import { TransformByQJavaProjectNotFound } from '../../amazonqGumby/models/model'
+import { MetadataResult } from '../../shared/telemetry/telemetryClient'
 
 /* TODO: once supported in all browsers and past "experimental" mode, use Intl DurationFormat:
  * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/DurationFormat#browser_compatibility
@@ -57,75 +61,93 @@ export function throwIfCancelled() {
     }
 }
 
-/*
- * This function searches for a .class file in each opened module. Then it runs javap on the found .class file to get the JDK version
- * for the file, and sets the version in the state variable. Only JDK8 and JDK11 are supported.
- */
-export async function getValidModules() {
+export async function getOpenProjects() {
     const folders = vscode.workspace.workspaceFolders
-    const validModules: vscode.QuickPickItem[] = []
     if (folders === undefined) {
         vscode.window.showErrorMessage(CodeWhispererConstants.noSupportedJavaProjectsFoundMessage, { modal: true })
-        throw Error('No Java projects found since no projects are open')
+        throw new ToolkitError('No Java projects found since no projects are open', { code: 'NoOpenProjects' })
     }
-    let containsSupportedJava = false // workspace must contain Java 8 or Java 11 code for this to be true
-    let containsPomXml = false // workspace must contain a 'pom.xml' file for this to be true
-    let failureReason = 'NoJavaProjectsAvailable'
+    const openProjects: vscode.QuickPickItem[] = []
     for (const folder of folders) {
-        const compiledJavaFiles = await vscode.workspace.findFiles(
-            new vscode.RelativePattern(folder, '**/*.class'),
-            '**/node_modules/**',
-            1
-        )
-        if (compiledJavaFiles.length < 1) {
-            continue
-        }
-        const classFilePath = compiledJavaFiles[0].fsPath
-        const baseCommand = 'javap'
-        const args = ['-v', classFilePath]
-        const spawnResult = spawnSync(baseCommand, args, { shell: false, encoding: 'utf-8' })
-
-        if (spawnResult.error || spawnResult.status !== 0) {
-            failureReason = 'CouldNotRunJavaCommand'
-            continue // if cannot get Java version, move on to other projects in workspace
-        }
-        const majorVersionIndex = spawnResult.stdout.indexOf('major version: ')
-        const javaVersion = spawnResult.stdout.slice(majorVersionIndex + 15, majorVersionIndex + 17).trim()
-        if (javaVersion === CodeWhispererConstants.JDK8VersionNumber) {
-            transformByQState.setSourceJDKVersionToJDK8()
-            containsSupportedJava = true
-        } else if (javaVersion === CodeWhispererConstants.JDK11VersionNumber) {
-            transformByQState.setSourceJDKVersionToJDK11()
-            containsSupportedJava = true
-        } else {
-            continue
-        }
-        const buildFile = await vscode.workspace.findFiles(
-            new vscode.RelativePattern(folder, '**/pom.xml'), // only supporting projects with a pom.xml for now
-            '**/node_modules/**',
-            1
-        )
-        if (buildFile.length < 1) {
-            checkIfGradle(folder)
-            continue
-        } else {
-            containsPomXml = true
-        }
-        validModules.push({ label: folder.name, description: folder.uri.fsPath })
-    }
-    if (!containsSupportedJava) {
-        vscode.window.showErrorMessage(CodeWhispererConstants.noSupportedJavaProjectsFoundMessage, { modal: true })
-        throw new ToolkitError('No Java projects found', { code: failureReason })
-    }
-    if (!containsPomXml) {
-        vscode.window.showErrorMessage(CodeWhispererConstants.noPomXmlFoundMessage, { modal: true })
-        throw new ToolkitError('No build file found', { code: 'CouldNotFindPomXml' })
-    } else {
-        telemetry.amazonq_codeTransformInvoke.record({
-            codeTransform_ProjectType: 'maven',
+        openProjects.push({
+            label: folder.name,
+            description: folder.uri.fsPath,
         })
     }
-    return validModules
+    return openProjects
+}
+
+/*
+ * This function searches for a .class file in the selected project. Then it runs javap on the found .class file to get the JDK version
+ * for the project, and sets the version in the state variable. Only JDK8 and JDK11 are supported. It also ensure a pom.xml file is found,
+ * since only the Maven build system is supported for now.
+ */
+export async function validateProjectSelection(project: vscode.QuickPickItem) {
+    const projectPath = project.description
+    const compiledJavaFiles = await vscode.workspace.findFiles(
+        new vscode.RelativePattern(projectPath!, '**/*.class'),
+        '**/node_modules/**',
+        1
+    )
+    if (compiledJavaFiles.length < 1) {
+        vscode.window.showErrorMessage(CodeWhispererConstants.noSupportedJavaProjectsFoundMessage, { modal: true })
+        telemetry.codeTransform_isDoubleClickedToTriggerInvalidProject.emit({
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformPreValidationError: 'No Java project found' as CodeTransformPreValidationError,
+            result: MetadataResult.Fail,
+        })
+        throw new TransformByQJavaProjectNotFound()
+    }
+    const classFilePath = compiledJavaFiles[0].fsPath
+    const baseCommand = 'javap'
+    const args = ['-v', classFilePath]
+    const spawnResult = spawnSync(baseCommand, args, { shell: false, encoding: 'utf-8' })
+
+    if (spawnResult.error || spawnResult.status !== 0) {
+        vscode.window.showErrorMessage(CodeWhispererConstants.noSupportedJavaProjectsFoundMessage, { modal: true })
+        telemetry.codeTransform_isDoubleClickedToTriggerInvalidProject.emit({
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformPreValidationError: 'No Java project found' as CodeTransformPreValidationError,
+            result: MetadataResult.Fail,
+        })
+        throw new ToolkitError('Unable to determine Java version', {
+            code: 'CannotDetermineJavaVersion',
+            cause: spawnResult.error,
+        })
+    }
+    const majorVersionIndex = spawnResult.stdout.indexOf('major version: ')
+    const javaVersion = spawnResult.stdout.slice(majorVersionIndex + 15, majorVersionIndex + 17).trim()
+    if (javaVersion === CodeWhispererConstants.JDK8VersionNumber) {
+        transformByQState.setSourceJDKVersionToJDK8()
+    } else if (javaVersion === CodeWhispererConstants.JDK11VersionNumber) {
+        transformByQState.setSourceJDKVersionToJDK11()
+    } else {
+        vscode.window.showErrorMessage(CodeWhispererConstants.noSupportedJavaProjectsFoundMessage, { modal: true })
+        telemetry.codeTransform_isDoubleClickedToTriggerInvalidProject.emit({
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformPreValidationError:
+                'Project selected is not Java 8 or Java 11' as CodeTransformPreValidationError,
+            result: MetadataResult.Fail,
+            reason: javaVersion,
+        })
+        throw new ToolkitError('Project selected is not Java 8 or Java 11', { code: 'UnsupportedJavaVersion' })
+    }
+    const buildFile = await vscode.workspace.findFiles(
+        new vscode.RelativePattern(projectPath!, 'pom.xml'), // check for pom.xml in root directory only
+        '**/node_modules/**',
+        1
+    )
+    if (buildFile.length < 1) {
+        const buildType = await checkIfGradle(projectPath!)
+        vscode.window.showErrorMessage(CodeWhispererConstants.noPomXmlFoundMessage, { modal: true })
+        telemetry.codeTransform_isDoubleClickedToTriggerInvalidProject.emit({
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformPreValidationError: 'Only Maven projects supported' as CodeTransformPreValidationError,
+            result: MetadataResult.Fail,
+            reason: buildType,
+        })
+        throw new ToolkitError('No valid Maven build file found', { code: 'CouldNotFindPomXml' })
+    }
 }
 
 export function getSha256(fileName: string) {
@@ -155,25 +177,59 @@ export async function uploadArtifactToS3(fileName: string, resp: CreateUploadUrl
 
     await sleep(2000) // pause to give time to recognize potential cancellation
     throwIfCancelled()
-
-    const response = await fetch('PUT', resp.uploadUrl, { body: fs.readFileSync(fileName), headers: headersObj })
-        .response
-    getLogger().info(`Status from S3 Upload = ${response.status}`)
+    try {
+        const apiStartTime = Date.now()
+        const response = await fetch('PUT', resp.uploadUrl, { body: fs.readFileSync(fileName), headers: headersObj })
+            .response
+        telemetry.codeTransform_logApiLatency.emit({
+            codeTransformApiNames: 'UploadZip',
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformUploadId: resp.uploadId,
+            codeTransformRunTimeLatency: calculateTotalLatency(apiStartTime),
+            // TODO: A nice to have would be getting the zipUploadSize
+            codeTransformTotalByteSize: 0,
+        })
+        getLogger().info(`Status from S3 Upload = ${response.status}`)
+    } catch (e: any) {
+        const errorMessage = e?.message || 'Error in S3 UploadZip API call'
+        telemetry.codeTransform_logApiError.emit({
+            codeTransformApiNames: 'UploadZip',
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformApiErrorMessage: errorMessage,
+            codeTransformRequestId: e?.requestId,
+        })
+        // Pass along error to callee function
+        throw new ToolkitError(errorMessage, { cause: e as Error })
+    }
 }
 
 export async function stopJob(jobId: string) {
     if (jobId !== '') {
         try {
-            await codeWhisperer.codeWhispererClient.codeModernizerStopCodeTransformation({
+            const apiStartTime = Date.now()
+            const response = await codeWhisperer.codeWhispererClient.codeModernizerStopCodeTransformation({
                 transformationJobId: jobId,
             })
-        } catch (err) {
+            if (response !== undefined) {
+                telemetry.codeTransform_logApiLatency.emit({
+                    codeTransformApiNames: 'StopTransformation',
+                    codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+                    codeTransformJobId: jobId,
+                    codeTransformRunTimeLatency: calculateTotalLatency(apiStartTime),
+                    codeTransformRequestId: response.$response.requestId,
+                })
+            }
+        } catch (e: any) {
             const errorMessage = 'Error stopping job'
-            telemetry.amazonq_codeTransformInvoke.record({
-                codeTransform_ApiName: 'StopTransformation',
-            })
             getLogger().error(errorMessage)
-            throw new ToolkitError(errorMessage, { cause: err as Error })
+            telemetry.codeTransform_logApiError.emit({
+                codeTransformApiNames: 'StopTransformation',
+                codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+                codeTransformJobId: jobId,
+                codeTransformApiErrorMessage: e?.message || errorMessage,
+                codeTransformRequestId: e?.requestId,
+            })
+            throw new ToolkitError(errorMessage, { cause: e as Error })
         }
     }
 }
@@ -182,13 +238,33 @@ export async function uploadPayload(payloadFileName: string) {
     const sha256 = getSha256(payloadFileName)
     await sleep(2000) // pause to give time to recognize potential cancellation
     throwIfCancelled()
-    const response = await codeWhisperer.codeWhispererClient.createUploadUrl({
-        contentChecksum: sha256,
-        contentChecksumType: CodeWhispererConstants.contentChecksumType,
-        uploadIntent: CodeWhispererConstants.uploadIntent,
-    })
-    await uploadArtifactToS3(payloadFileName, response)
-    return response.uploadId
+    try {
+        const apiStartTime = Date.now()
+        const response = await codeWhisperer.codeWhispererClient.createUploadUrl({
+            contentChecksum: sha256,
+            contentChecksumType: CodeWhispererConstants.contentChecksumType,
+            uploadIntent: CodeWhispererConstants.uploadIntent,
+        })
+        telemetry.codeTransform_logApiLatency.emit({
+            codeTransformApiNames: 'CreateUploadUrl',
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformRunTimeLatency: calculateTotalLatency(apiStartTime),
+            codeTransformUploadId: response.uploadId,
+            codeTransformRequestId: response.$response.requestId,
+        })
+        await uploadArtifactToS3(payloadFileName, response)
+        return response.uploadId
+    } catch (e: any) {
+        const errorMessage = e?.message || 'Error in CreateUploadUrl API call'
+        telemetry.codeTransform_logApiError.emit({
+            codeTransformApiNames: 'CreateUploadUrl',
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformApiErrorMessage: errorMessage,
+            codeTransformRequestId: e?.requestId,
+        })
+        // Pass along error to callee function
+        throw new ToolkitError(errorMessage, { cause: e as Error })
+    }
 }
 
 function getFilesRecursively(dir: string): string[] {
@@ -242,7 +318,7 @@ function getProjectDependencies(modulePath: string): string[] {
 export async function zipCode(modulePath: string) {
     await sleep(2000) // pause to give time to recognize potential cancellation
     throwIfCancelled()
-
+    const zipStartTime = Date.now()
     const sourceFolder = modulePath
     const sourceFiles = getFilesRecursively(sourceFolder)
 
@@ -276,7 +352,7 @@ export async function zipCode(modulePath: string) {
     throwIfCancelled()
 
     let dependencyFiles: string[] = []
-    if (!mavenFailed) {
+    if (!mavenFailed && fs.existsSync(dependencyFolderPath)) {
         dependencyFiles = getFilesRecursively(dependencyFolderPath)
     }
 
@@ -300,24 +376,51 @@ export async function zipCode(modulePath: string) {
     if (!mavenFailed) {
         fs.rmSync(dependencyFolderPath, { recursive: true, force: true })
     }
+
+    telemetry.codeTransform_jobCreateZipEndTime.emit({
+        codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+        // TODO: A nice to have would be getting the zipUploadSize
+        codeTransformTotalByteSize: 0,
+        codeTransformRunTimeLatency: calculateTotalLatency(zipStartTime),
+    })
     return tempFilePath
 }
 
 export async function startJob(uploadId: string) {
     const sourceLanguageVersion = `JAVA_${transformByQState.getSourceJDKVersion()}`
     const targetLanguageVersion = `JAVA_${transformByQState.getTargetJDKVersion()}`
-    const response = await codeWhisperer.codeWhispererClient.codeModernizerStartCodeTransformation({
-        workspaceState: {
-            uploadId: uploadId,
-            programmingLanguage: { languageName: CodeWhispererConstants.defaultLanguage.toLowerCase() },
-        },
-        transformationSpec: {
-            transformationType: CodeWhispererConstants.transformationType,
-            source: { language: sourceLanguageVersion },
-            target: { language: targetLanguageVersion },
-        },
-    })
-    return response.transformationJobId
+    try {
+        const apiStartTime = Date.now()
+        const response = await codeWhisperer.codeWhispererClient.codeModernizerStartCodeTransformation({
+            workspaceState: {
+                uploadId: uploadId,
+                programmingLanguage: { languageName: CodeWhispererConstants.defaultLanguage.toLowerCase() },
+            },
+            transformationSpec: {
+                transformationType: CodeWhispererConstants.transformationType,
+                source: { language: sourceLanguageVersion },
+                target: { language: targetLanguageVersion },
+            },
+        })
+        telemetry.codeTransform_logApiLatency.emit({
+            codeTransformApiNames: 'StartTransformation',
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformRunTimeLatency: calculateTotalLatency(apiStartTime),
+            codeTransformJobId: response.transformationJobId,
+            codeTransformRequestId: response.$response.requestId,
+        })
+        return response.transformationJobId
+    } catch (e: any) {
+        const errorMessage = e?.message || 'Error in StartTransformation API call'
+        telemetry.codeTransform_logApiError.emit({
+            codeTransformApiNames: 'StartTransformation',
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformApiErrorMessage: errorMessage,
+            codeTransformRequestId: e?.requestId,
+        })
+        // Pass along error to callee function
+        throw new ToolkitError(errorMessage, { cause: e as Error })
+    }
 }
 
 export function getImageAsBase64(filePath: string) {
@@ -326,33 +429,74 @@ export function getImageAsBase64(filePath: string) {
 }
 
 export async function getTransformationPlan(jobId: string) {
-    const response = await codeWhisperer.codeWhispererClient.codeModernizerGetCodeTransformationPlan({
-        transformationJobId: jobId,
-    })
-    const logoAbsolutePath = globals.context.asAbsolutePath(
-        path.join('resources', 'icons', 'aws', 'amazonq', 'transform-landing-page-icon.svg')
-    )
-    const logoBase64 = getImageAsBase64(logoAbsolutePath)
-    let plan = `![Transform by Q](${logoBase64}) \n # Code Transformation Plan by Amazon Q \n\n`
-    plan += CodeWhispererConstants.planIntroductionMessage.replace(
-        'JAVA_VERSION_HERE',
-        transformByQState.getSourceJDKVersion()
-    )
-    plan += `\n\nExpected total transformation steps: ${response.transformationPlan.transformationSteps.length}\n\n`
-    plan += CodeWhispererConstants.planDisclaimerMessage
-    for (const step of response.transformationPlan.transformationSteps) {
-        plan += `**${step.name}**\n\n- ${step.description}\n\n\n`
-    }
+    try {
+        const apiStartTime = Date.now()
+        const response = await codeWhisperer.codeWhispererClient.codeModernizerGetCodeTransformationPlan({
+            transformationJobId: jobId,
+        })
+        telemetry.codeTransform_logApiLatency.emit({
+            codeTransformApiNames: 'GetTransformationPlan',
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformJobId: jobId,
+            codeTransformRunTimeLatency: calculateTotalLatency(apiStartTime),
+            codeTransformRequestId: response.$response.requestId,
+        })
+        const logoAbsolutePath = globals.context.asAbsolutePath(
+            path.join('resources', 'icons', 'aws', 'amazonq', 'transform-landing-page-icon.svg')
+        )
+        const logoBase64 = getImageAsBase64(logoAbsolutePath)
+        let plan = `![Transform by Q](${logoBase64}) \n # Code Transformation Plan by Amazon Q \n\n`
+        plan += CodeWhispererConstants.planIntroductionMessage.replace(
+            'JAVA_VERSION_HERE',
+            transformByQState.getSourceJDKVersion()
+        )
+        plan += `\n\nExpected total transformation steps: ${response.transformationPlan.transformationSteps.length}\n\n`
+        plan += CodeWhispererConstants.planDisclaimerMessage
+        for (const step of response.transformationPlan.transformationSteps) {
+            plan += `**${step.name}**\n\n- ${step.description}\n\n\n`
+        }
 
-    return plan
+        return plan
+    } catch (e: any) {
+        const errorMessage = e?.message || 'Error in GetTransformationPlan API call'
+        telemetry.codeTransform_logApiError.emit({
+            codeTransformApiNames: 'GetTransformationPlan',
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformJobId: jobId,
+            codeTransformApiErrorMessage: errorMessage,
+            codeTransformRequestId: e?.requestId,
+        })
+        // Pass along error to callee function
+        throw new ToolkitError(errorMessage, { cause: e as Error })
+    }
 }
 
 export async function getTransformationSteps(jobId: string) {
-    await sleep(2000) // prevent ThrottlingException
-    const response = await codeWhisperer.codeWhispererClient.codeModernizerGetCodeTransformationPlan({
-        transformationJobId: jobId,
-    })
-    return response.transformationPlan.transformationSteps
+    try {
+        await sleep(2000) // prevent ThrottlingException
+        const apiStartTime = Date.now()
+        const response = await codeWhisperer.codeWhispererClient.codeModernizerGetCodeTransformationPlan({
+            transformationJobId: jobId,
+        })
+        telemetry.codeTransform_logApiLatency.emit({
+            codeTransformApiNames: 'GetTransformationPlan',
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformJobId: jobId,
+            codeTransformRunTimeLatency: calculateTotalLatency(apiStartTime),
+            codeTransformRequestId: response.$response.requestId,
+        })
+        return response.transformationPlan.transformationSteps
+    } catch (e: any) {
+        const errorMessage = e?.message || 'Error in GetTransformationPlan API call'
+        telemetry.codeTransform_logApiError.emit({
+            codeTransformApiNames: 'GetTransformationPlan',
+            codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+            codeTransformJobId: jobId,
+            codeTransformApiErrorMessage: errorMessage,
+            codeTransformRequestId: e?.requestId,
+        })
+        throw e
+    }
 }
 
 export async function pollTransformationJob(jobId: string, validStates: string[]) {
@@ -360,44 +504,70 @@ export async function pollTransformationJob(jobId: string, validStates: string[]
     let timer: number = 0
     while (true) {
         throwIfCancelled()
-        const response = await codeWhisperer.codeWhispererClient.codeModernizerGetCodeTransformation({
-            transformationJobId: jobId,
-        })
-        if (response.transformationJob.reason) {
-            transformByQState.setJobFailureReason(response.transformationJob.reason)
-        }
-        status = response.transformationJob.status!
-        transformByQState.setPolledJobStatus(status)
-        await vscode.commands.executeCommand('aws.amazonq.refresh')
-        if (validStates.includes(status)) {
-            break
-        }
-        if (CodeWhispererConstants.failureStates.includes(status)) {
-            throw new Error('Job failed, not going to retrieve plan')
-        }
-        await sleep(CodeWhispererConstants.transformationJobPollingIntervalSeconds * 1000)
-        timer += CodeWhispererConstants.transformationJobPollingIntervalSeconds
-        if (timer > CodeWhispererConstants.transformationJobTimeoutSeconds) {
-            throw new Error('Transform by Q timed out')
+        try {
+            const apiStartTime = Date.now()
+            const response = await codeWhisperer.codeWhispererClient.codeModernizerGetCodeTransformation({
+                transformationJobId: jobId,
+            })
+            telemetry.codeTransform_logApiLatency.emit({
+                codeTransformApiNames: 'GetTransformation',
+                codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+                codeTransformJobId: jobId,
+                codeTransformRunTimeLatency: calculateTotalLatency(apiStartTime),
+                codeTransformRequestId: response.$response.requestId,
+            })
+            status = response.transformationJob.status!
+            if (response.transformationJob.reason) {
+                transformByQState.setJobFailureReason(response.transformationJob.reason)
+            }
+            // Conditional check to verify when state changes during polling and log
+            // these state changes during transformation
+            if (status !== transformByQState.getPolledJobStatus()) {
+                telemetry.codeTransform_jobStatusChanged.emit({
+                    codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+                    codeTransformJobId: jobId,
+                    codeTransformStatus: status,
+                })
+            }
+            transformByQState.setPolledJobStatus(status)
+            await vscode.commands.executeCommand('aws.amazonq.refresh')
+            if (validStates.includes(status)) {
+                break
+            }
+            if (CodeWhispererConstants.failureStates.includes(status)) {
+                throw new Error('Job failed, not going to retrieve plan')
+            }
+            await sleep(CodeWhispererConstants.transformationJobPollingIntervalSeconds * 1000)
+            timer += CodeWhispererConstants.transformationJobPollingIntervalSeconds
+            if (timer > CodeWhispererConstants.transformationJobTimeoutSeconds) {
+                throw new Error('Transform by Q timed out')
+            }
+        } catch (e: any) {
+            const errorMessage = e?.message || 'Error in GetTransformation API call'
+            telemetry.codeTransform_logApiError.emit({
+                codeTransformApiNames: 'GetTransformation',
+                codeTransformSessionId: codeTransformTelemetryState.getSessionId(),
+                codeTransformJobId: jobId,
+                codeTransformApiErrorMessage: errorMessage,
+                codeTransformRequestId: e?.requestId,
+            })
+            // Pass along error to callee function
+            throw new ToolkitError(errorMessage, { cause: e as Error })
         }
     }
     return status
 }
 
-async function checkIfGradle(folder: vscode.WorkspaceFolder) {
-    const gradleBuildFiles = await vscode.workspace.findFiles(
-        new vscode.RelativePattern(folder, '**/build.gradle'),
+async function checkIfGradle(projectPath: string) {
+    const gradleBuildFile = await vscode.workspace.findFiles(
+        new vscode.RelativePattern(projectPath, '**/build.gradle'),
         '**/node_modules/**',
         1
     )
 
-    if (gradleBuildFiles.length > 1) {
-        telemetry.amazonq_codeTransformInvoke.record({
-            codeTransform_ProjectType: 'gradle',
-        })
+    if (gradleBuildFile.length > 0) {
+        return 'Gradle'
     } else {
-        telemetry.amazonq_codeTransformInvoke.record({
-            codeTransform_ProjectType: 'unknown',
-        })
+        return 'Unknown'
     }
 }
