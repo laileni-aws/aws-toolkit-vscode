@@ -200,7 +200,9 @@ export const codeScanJavaPayloadSizeLimitBytes = Math.pow(2, 20) // 1 MB
 
 export const codeScanCsharpPayloadSizeLimitBytes = Math.pow(2, 20) // 1 MB
 
-export const codeScanRubyPayloadSizeLimitBytes = Math.pow(2, 20) // 1 MB
+export const codeScanRubyPayloadSizeLimitBytes = 200 * Math.pow(2, 10) // 200 KB
+
+export const codeScanGoPayloadSizeLimitBytes = 200 * Math.pow(2, 10) // 200 KB
 
 export const codeScanPythonPayloadSizeLimitBytes = 200 * Math.pow(2, 10) // 200 KB
 
