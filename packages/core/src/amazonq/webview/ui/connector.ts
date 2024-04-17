@@ -196,6 +196,14 @@ export class Connector {
         }
     }
 
+    handleMessageofStreamedData = (tabID: string, totalCodeBlocks: number, messageId: string): void => {
+        switch (this.tabsStorage.getTab(tabID)?.type) {
+            case 'cwc':
+                this.cwChatConnector.handleMessageofStreamedData(tabID, totalCodeBlocks, messageId)
+                break
+        }
+    }
+
     onTabChange = (tabId: string): void => {
         const prevTabID = this.tabsStorage.setSelectedTab(tabId)
         this.cwChatConnector.onTabChange(tabId, prevTabID)

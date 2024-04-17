@@ -135,6 +135,16 @@ export class Connector {
         })
     }
 
+    handleMessageofStreamedData = (tabID: string, totalCodeBlocks: number, messageId: string) => {
+        this.sendMessageToExtension({
+            tabID: tabID,
+            command: 'message-of-streamed-data',
+            tabType: 'cwc',
+            messageId: messageId,
+            totalCodeBlocks,
+        })
+    }
+
     onTabRemove = (tabID: string): void => {
         this.sendMessageToExtension({
             tabID: tabID,

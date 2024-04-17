@@ -165,6 +165,22 @@ export class ChatMessage extends UiMessage {
     }
 }
 
+export interface StopResponseMessageProps {
+    readonly messageID: string
+    readonly stopResponse: boolean
+}
+
+export class StopResponseMessage extends UiMessage {
+    readonly messageID: string | undefined
+    readonly stopResponse: boolean
+
+    constructor(props: StopResponseMessageProps, tabID: string) {
+        super(tabID)
+        this.messageID = props.messageID
+        this.stopResponse = props.stopResponse
+    }
+}
+
 export interface FollowUp {
     readonly type: string
     readonly pillText: string
@@ -252,6 +268,10 @@ export class AppToWebViewMessageDispatcher {
     }
 
     public sendAuthNeededExceptionMessage(message: AuthNeededException) {
+        this.appsToWebViewMessagePublisher.publish(message)
+    }
+
+    public sendMessageResponseEnded(message: StopResponseMessage) {
         this.appsToWebViewMessagePublisher.publish(message)
     }
 }

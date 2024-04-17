@@ -58,6 +58,14 @@ export interface CopyCodeToClipboard {
     totalCodeBlocks: number
 }
 
+export interface MessageofStreamedData {
+    command: string | undefined
+    tabID: string
+    messageId: string
+    totalCodeBlocks: number
+    tabType: string
+}
+
 export type ChatPromptCommandType =
     | 'help'
     | 'clear'

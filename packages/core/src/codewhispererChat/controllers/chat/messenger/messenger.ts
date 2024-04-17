@@ -11,6 +11,7 @@ import {
     EditorContextCommandMessage,
     OnboardingPageInteractionMessage,
     QuickActionMessage,
+    StopResponseMessage,
 } from '../../../view/connector/connector'
 import { EditorContextCommandType } from '../../../commands/registerCommands'
 import {
@@ -231,6 +232,15 @@ export class Messenger {
                         )
                     )
                 }
+                this.dispatcher.sendMessageResponseEnded(
+                    new StopResponseMessage(
+                        {
+                            messageID: messageID,
+                            stopResponse: true,
+                        },
+                        tabID
+                    )
+                )
 
                 this.dispatcher.sendChatMessage(
                     new ChatMessage(

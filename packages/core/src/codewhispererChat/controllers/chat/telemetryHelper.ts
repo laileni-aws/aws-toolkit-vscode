@@ -26,6 +26,7 @@ import {
     ResponseBodyLinkClickMessage,
     SourceLinkClickMessage,
     TriggerPayload,
+    MessageofStreamedData,
 } from './model'
 import { TriggerEvent, TriggerEventsStorage } from '../../storages/triggerEvents'
 import globals from '../../../shared/extensionGlobals'
@@ -145,6 +146,7 @@ export class CWCTelemetryHelper {
             | SourceLinkClickMessage
             | ResponseBodyLinkClickMessage
             | FooterInfoLinkClick
+            | MessageofStreamedData
     ) {
         const conversationId = this.getConversationId(message.tabID)
         let event: AmazonqInteractWithMessage | undefined
@@ -230,6 +232,17 @@ export class CWCTelemetryHelper {
                     credentialStartUrl: AuthUtil.instance.startUrl,
                     cwsprChatInteractionType: 'clickBodyLink',
                     cwsprChatInteractionTarget: message.link,
+                }
+                break
+            case 'message-of-streamed-data':
+                message = message as MessageofStreamedData
+                event = {
+                    result: 'Succeeded',
+                    cwsprChatTotalCodeBlocks: message.totalCodeBlocks,
+                    cwsprChatMessageId: message.messageId,
+                    cwsprChatConversationId: conversationId ?? '',
+                    credentialStartUrl: AuthUtil.instance.startUrl,
+                    cwsprChatInteractionType: 'upvote',
                 }
                 break
         }

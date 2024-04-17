@@ -25,6 +25,7 @@ import {
     ResponseBodyLinkClickMessage,
     ChatPromptCommandType,
     FooterInfoLinkClick,
+    MessageofStreamedData,
 } from './model'
 import { AppToWebViewMessageDispatcher } from '../../view/connector/connector'
 import { MessagePublisher } from '../../../amazonq/messages/messagePublisher'
@@ -64,6 +65,7 @@ export interface ChatControllerMessagePublishers {
     readonly processSourceLinkClick: MessagePublisher<SourceLinkClickMessage>
     readonly processResponseBodyLinkClick: MessagePublisher<ResponseBodyLinkClickMessage>
     readonly processFooterInfoLinkClick: MessagePublisher<FooterInfoLinkClick>
+    readonly processMessageofStreamedData: MessagePublisher<MessageofStreamedData>
 }
 
 export interface ChatControllerMessageListeners {
@@ -83,6 +85,7 @@ export interface ChatControllerMessageListeners {
     readonly processSourceLinkClick: MessageListener<SourceLinkClickMessage>
     readonly processResponseBodyLinkClick: MessageListener<ResponseBodyLinkClickMessage>
     readonly processFooterInfoLinkClick: MessageListener<FooterInfoLinkClick>
+    readonly processMessageofStreamedData: MessageListener<MessageofStreamedData>
 }
 
 export class ChatController {
@@ -142,6 +145,10 @@ export class ChatController {
 
         this.chatControllerMessageListeners.processCopyCodeToClipboard.onMessage(data => {
             return this.processCopyCodeToClipboard(data)
+        })
+
+        this.chatControllerMessageListeners.processMessageofStreamedData.onMessage(data => {
+            return this.processMessageofStreamedData(data)
         })
 
         this.chatControllerMessageListeners.processContextMenuCommand.onMessage(data => {
@@ -308,6 +315,11 @@ export class ChatController {
 
     private async processCopyCodeToClipboard(message: CopyCodeToClipboard) {
         this.telemetryHelper.recordInteractWithMessage(message)
+    }
+
+    private async processMessageofStreamedData(message: MessageofStreamedData) {
+        // Check the telemtry and trigger from here
+        //this.telemetryHelper.recordInteractWithMessage(message)
     }
 
     private async processTabCreateMessage(message: TabCreatedMessage) {

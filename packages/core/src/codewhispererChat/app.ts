@@ -24,6 +24,7 @@ import {
     TabCreatedMessage,
     TriggerTabIDReceived,
     UIFocusMessage,
+    MessageofStreamedData,
 } from './controllers/chat/model'
 import { EditorContextCommand, registerCommands } from './commands/registerCommands'
 import { OnboardingPageInteraction } from '../amazonq/onboardingPage/model'
@@ -46,6 +47,7 @@ export function init(appContext: AmazonQAppInitContext) {
         processSourceLinkClick: new EventEmitter<SourceLinkClickMessage>(),
         processResponseBodyLinkClick: new EventEmitter<ResponseBodyLinkClickMessage>(),
         processFooterInfoLinkClick: new EventEmitter<FooterInfoLinkClick>(),
+        processMessageofStreamedData: new EventEmitter<MessageofStreamedData>(),
     }
 
     const cwChatControllerMessageListeners = {
@@ -94,6 +96,9 @@ export function init(appContext: AmazonQAppInitContext) {
         ),
         processFooterInfoLinkClick: new MessageListener<FooterInfoLinkClick>(
             cwChatControllerEventEmitters.processFooterInfoLinkClick
+        ),
+        processMessageofStreamedData: new MessageListener<MessageofStreamedData>(
+            cwChatControllerEventEmitters.processMessageofStreamedData
         ),
     }
 
@@ -145,6 +150,9 @@ export function init(appContext: AmazonQAppInitContext) {
         ),
         processFooterInfoLinkClick: new MessagePublisher<FooterInfoLinkClick>(
             cwChatControllerEventEmitters.processFooterInfoLinkClick
+        ),
+        processMessageofStreamedData: new MessagePublisher<MessageofStreamedData>(
+            cwChatControllerEventEmitters.processMessageofStreamedData
         ),
     }
 

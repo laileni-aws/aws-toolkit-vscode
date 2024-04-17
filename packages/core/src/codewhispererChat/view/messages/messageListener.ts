@@ -98,6 +98,8 @@ export class UIMessageListener {
             case 'footer-info-link-click':
                 this.processFooterInfoLinkClick(msg)
                 break
+            case 'message-of-streamed-data':
+                this.processMessageofStreamedData(msg)
         }
     }
 
@@ -174,6 +176,17 @@ export class UIMessageListener {
             eventId: msg.eventId,
             codeBlockIndex: msg.codeBlockIndex,
             totalCodeBlocks: msg.totalCodeBlocks,
+        })
+    }
+
+    // gets the total number of code blocks in a streamed data
+    private processMessageofStreamedData(msg: any) {
+        this.chatControllerMessagePublishers.processMessageofStreamedData.publish({
+            command: msg.command,
+            tabID: msg.tabID,
+            messageId: msg.messageId,
+            totalCodeBlocks: msg.totalCodeBlocks,
+            tabType: msg.tabType,
         })
     }
 
