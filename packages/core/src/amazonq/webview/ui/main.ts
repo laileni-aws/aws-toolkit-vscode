@@ -34,28 +34,6 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
             })
         },
     })
-    /*
-    function countNumberOfCodeBlocks(messageGenerated: string | undefined): number {
-        if (messageGenerated === undefined) {
-            return 0
-        }
-        let totalCodeBlocks = 0
-        let codeBlockIndex = messageGenerated.indexOf('```')
-        while (codeBlockIndex !== -1) {
-            totalCodeBlocks++
-            codeBlockIndex = messageGenerated.indexOf('```', codeBlockIndex + 1)
-        }
-        return Math.floor(totalCodeBlocks / 2)
-    }
-*/
-    function countNumberOfCodeBlocks(messageGenerated: string): number {
-        if (messageGenerated === undefined) {
-            return 0
-        }
-        const matches = messageGenerated.match(/```/g)
-        const totalCodeBlockOpenAndClose = matches ? matches.length : 0 //totalCodeBlockOpenAndClose
-        return Math.floor(totalCodeBlockOpenAndClose / 2)
-    }
 
     // Adding the first tab as CWC tab
     tabsStorage.addTab({
@@ -207,10 +185,6 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
         },
         onChatAnswerReceived: (tabID: string, item: ChatItem) => {
             if (item.type === ChatItemType.ANSWER_PART || item.type === ChatItemType.CODE_RESULT) {
-                if (item.body !== undefined && item.messageId !== undefined) {
-                    const totalCodeBlocks = countNumberOfCodeBlocks(item.body)
-                    connector.handleMessageofStreamedData(tabID, totalCodeBlocks, item.messageId)
-                }
                 mynahUI.updateLastChatAnswer(tabID, {
                     ...(item.messageId !== undefined ? { messageId: item.messageId } : {}),
                     ...(item.canBeVoted !== undefined ? { canBeVoted: item.canBeVoted } : {}),
@@ -249,6 +223,10 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
             }
 
             if (item.type === ChatItemType.ANSWER) {
+                if (item.messageId !== undefined) {
+                    const count = mynahUI.endMessageStream(tabID, item.messageId).totalNumberOfCodeBlocks
+                    connector.handleMessageofStreamedData(tabID, count === undefined ? 0 : count, item.messageId)
+                }
                 mynahUI.updateStore(tabID, {
                     loadingChat: false,
                     promptInputDisabledState: tabsStorage.isTabDead(tabID),
