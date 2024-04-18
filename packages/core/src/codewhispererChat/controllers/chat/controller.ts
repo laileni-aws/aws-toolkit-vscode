@@ -319,7 +319,7 @@ export class ChatController {
 
     private async processMessageofStreamedData(message: MessageofStreamedData) {
         // Check the telemtry and trigger from here
-        //this.telemetryHelper.recordInteractWithMessage(message)
+        this.telemetryHelper.recordInteractWithMessage(message)
     }
 
     private async processTabCreateMessage(message: TabCreatedMessage) {

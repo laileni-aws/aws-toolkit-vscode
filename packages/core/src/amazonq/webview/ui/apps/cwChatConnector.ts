@@ -92,10 +92,7 @@ export class Connector {
         messageId: string,
         code?: string,
         type?: 'selection' | 'block',
-        codeReference?: CodeReference[],
-        eventId?: string,
-        codeBlockIndex?: number,
-        totalCodeBlocks?: number
+        codeReference?: CodeReference[]
     ): void => {
         this.sendMessageToExtension({
             tabID: tabID,
@@ -105,9 +102,6 @@ export class Connector {
             tabType: 'cwc',
             insertionTargetType: type,
             codeReference,
-            eventId,
-            codeBlockIndex,
-            totalCodeBlocks,
         })
     }
 
@@ -116,10 +110,7 @@ export class Connector {
         messageId: string,
         code?: string,
         type?: 'selection' | 'block',
-        codeReference?: CodeReference[],
-        eventId?: string,
-        codeBlockIndex?: number,
-        totalCodeBlocks?: number
+        codeReference?: CodeReference[]
     ): void => {
         this.sendMessageToExtension({
             tabID: tabID,
@@ -129,9 +120,6 @@ export class Connector {
             tabType: 'cwc',
             insertionTargetType: type,
             codeReference,
-            eventId,
-            codeBlockIndex,
-            totalCodeBlocks,
         })
     }
 

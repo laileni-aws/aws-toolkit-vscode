@@ -207,7 +207,6 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
         },
         onChatAnswerReceived: (tabID: string, item: ChatItem) => {
             if (item.type === ChatItemType.ANSWER_PART || item.type === ChatItemType.CODE_RESULT) {
-                // Enters after gen started 1st chunk with messageId
                 if (item.body !== undefined && item.messageId !== undefined) {
                     const totalCodeBlocks = countNumberOfCodeBlocks(item.body)
                     connector.handleMessageofStreamedData(tabID, totalCodeBlocks, item.messageId)
@@ -240,7 +239,6 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
                 item.type === ChatItemType.SYSTEM_PROMPT ||
                 item.type === ChatItemType.AI_PROMPT
             ) {
-                //Does not enter this
                 mynahUI.updateStore(tabID, {
                     loadingChat: true,
                     promptInputDisabledState: true,
@@ -251,7 +249,6 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
             }
 
             if (item.type === ChatItemType.ANSWER) {
-                //Enters only once before gen the code block but with messageID
                 mynahUI.updateStore(tabID, {
                     loadingChat: false,
                     promptInputDisabledState: tabsStorage.isTabDead(tabID),
@@ -397,26 +394,8 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
             })
         },
         onCodeInsertToCursorPosition: connector.onCodeInsertToCursorPosition,
-        onCopyCodeToClipboard: (
-            tabId,
-            messageId,
-            code,
-            type,
-            referenceTrackerInfo,
-            eventId,
-            codeBlockIndex,
-            totalCodeBlocks
-        ) => {
-            connector.onCopyCodeToClipboard(
-                tabId,
-                messageId,
-                code,
-                type,
-                referenceTrackerInfo,
-                eventId,
-                codeBlockIndex,
-                totalCodeBlocks
-            )
+        onCopyCodeToClipboard: (tabId, messageId, code, type, referenceTrackerInfo) => {
+            connector.onCopyCodeToClipboard(tabId, messageId, code, type, referenceTrackerInfo)
             mynahUI.notify({
                 type: NotificationType.SUCCESS,
                 content: 'Selected code is copied to clipboard',
