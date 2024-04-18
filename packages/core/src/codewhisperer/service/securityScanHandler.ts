@@ -14,10 +14,10 @@ import { RawCodeScanIssue } from '../models/model'
 import * as crypto from 'crypto'
 import path = require('path')
 import { pageableToCollection } from '../../shared/utilities/collectionUtils'
-import { ArtifactMap, CreateUploadUrlRequest, CreateUploadUrlResponse } from '../client/codewhispereruserclient'
+import { ArtifactMap, CreateUploadUrlRequest } from '../client/codewhispereruserclient'
 import { Truncation } from '../util/dependencyGraph/dependencyGraph'
 import { TelemetryHelper } from '../util/telemetryHelper'
-import request from '../../common/request'
+import { uploadCode } from '../../amazonqFeatureDev/util/upload'
 
 export async function listScanResults(
     client: DefaultCodeWhispererClient,
@@ -154,7 +154,12 @@ export async function getPresignedUrlAndUpload(client: DefaultCodeWhispererClien
     getLogger().verbose(`Request id: ${srcResp.$response.requestId}`)
     getLogger().verbose(`Complete Getting presigned Url for uploading src context.`)
     getLogger().verbose(`Uploading src context...`)
-    await uploadArtifactToS3(truncation.zipFilePath, srcResp)
+    await uploadCode(
+        srcResp.uploadUrl,
+        readFileSync(truncation.zipFilePath),
+        srcResp.requestHeaders,
+        'QCA SecurityScan'
+    )
     getLogger().verbose(`Complete uploading src context.`)
     const artifactMap: ArtifactMap = {
         SourceCode: srcResp.uploadId,
@@ -172,24 +177,4 @@ export function throwIfCancelled() {
     if (codeScanState.isCancelling()) {
         throw new CodeScanStoppedError()
     }
-}
-
-export async function uploadArtifactToS3(fileName: string, resp: CreateUploadUrlResponse) {
-    const encryptionContext = `{"uploadId":"${resp.uploadId}"}`
-    const headersObj: Record<string, string> = {
-        'Content-MD5': getMd5(fileName),
-        'x-amz-server-side-encryption': 'aws:kms',
-        'Content-Type': 'application/zip',
-        'x-amz-server-side-encryption-context': Buffer.from(encryptionContext, 'utf8').toString('base64'),
-    }
-
-    if (resp.kmsKeyArn !== '' && resp.kmsKeyArn !== undefined) {
-        headersObj['x-amz-server-side-encryption-aws-kms-key-id'] = resp.kmsKeyArn
-    }
-
-    const response = await request.fetch('PUT', resp.uploadUrl, {
-        body: readFileSync(fileName),
-        headers: headersObj,
-    }).response
-    getLogger().debug(`StatusCode: ${response.status}, Text: ${response.statusText}`)
 }

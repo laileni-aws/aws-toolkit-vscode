@@ -5,7 +5,6 @@
 
 import request, { RequestError } from '../../common/request'
 import { getLogger } from '../../shared/logger/logger'
-import { featureName } from '../constants'
 
 import { UploadCodeError } from '../errors'
 
@@ -14,19 +13,11 @@ import { UploadCodeError } from '../errors'
  *
  * uses a presigned url and files checksum to transfer data to s3 through http.
  */
-export async function uploadCode(url: string, buffer: Buffer, checksumSha256: string, kmsKeyArn?: string) {
+export async function uploadCode(url: string, buffer: Buffer, requestHeaders: any, featureName: string) {
     try {
         await request.fetch('PUT', url, {
             body: buffer,
-            headers: {
-                'Content-Type': 'application/zip',
-                'Content-Length': String(buffer.length),
-                'x-amz-checksum-sha256': checksumSha256,
-                ...(kmsKeyArn && {
-                    'x-amz-server-side-encryption-aws-kms-key-id': kmsKeyArn,
-                    'x-amz-server-side-encryption': 'aws:kms',
-                }),
-            },
+            headers: requestHeaders,
         }).response
     } catch (e: any) {
         getLogger().error(`${featureName}: failed to upload code to s3: ${(e as Error).message}`)
