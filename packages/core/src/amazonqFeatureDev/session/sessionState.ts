@@ -12,7 +12,7 @@ import { getLogger } from '../../shared/logger'
 import { telemetry } from '../../shared/telemetry/telemetry'
 import { VirtualFileSystem } from '../../shared/virtualFilesystem'
 import { VirtualMemoryFile } from '../../shared/virtualMemoryFile'
-import { featureDevScheme, featureName } from '../constants'
+import { featureDevScheme } from '../constants'
 import { IllegalStateTransition, UserMessageNotFoundError } from '../errors'
 import {
     CurrentWsFolders,
@@ -73,17 +73,8 @@ export class PrepareRefinementState implements Omit<SessionState, 'uploadId'> {
                 zipFileChecksum,
                 zipFileBuffer.length
             )
-            const requestHeaders = {
-                'Content-Type': 'application/zip',
-                'Content-Length': String(zipFileBuffer.length),
-                'x-amz-checksum-sha256': zipFileChecksum,
-                ...(kmsKeyArn && {
-                    'x-amz-server-side-encryption-aws-kms-key-id': kmsKeyArn,
-                    'x-amz-server-side-encryption': 'aws:kms',
-                }),
-            }
 
-            await uploadCode(uploadUrl, zipFileBuffer, requestHeaders, featureName)
+            await uploadCode(uploadUrl, zipFileBuffer, zipFileChecksum, kmsKeyArn)
             return uploadId
         })
         const nextState = new RefinementState({ ...this.config, uploadId }, this.approach, this.tabID, 0)
@@ -481,17 +472,8 @@ export class PrepareCodeGenState implements SessionState {
                 zipFileChecksum,
                 zipFileBuffer.length
             )
-            const requestHeaders = {
-                'Content-Type': 'application/zip',
-                'Content-Length': String(zipFileBuffer.length),
-                'x-amz-checksum-sha256': zipFileChecksum,
-                ...(kmsKeyArn && {
-                    'x-amz-server-side-encryption-aws-kms-key-id': kmsKeyArn,
-                    'x-amz-server-side-encryption': 'aws:kms',
-                }),
-            }
 
-            await uploadCode(uploadUrl, zipFileBuffer, requestHeaders, featureName)
+            await uploadCode(uploadUrl, zipFileBuffer, zipFileChecksum, kmsKeyArn)
             return uploadId
         })
         this.uploadId = uploadId
