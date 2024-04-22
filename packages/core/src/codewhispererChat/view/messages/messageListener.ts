@@ -98,8 +98,8 @@ export class UIMessageListener {
             case 'footer-info-link-click':
                 this.processFooterInfoLinkClick(msg)
                 break
-            case 'message-of-streamed-data':
-                this.processMessageofStreamedData(msg)
+            case 'chat-stream-ended':
+                this.processTotalCodeBlocksReceived(msg)
         }
     }
 
@@ -173,17 +173,6 @@ export class UIMessageListener {
         })
     }
 
-    // gets the total number of code blocks in a streamed data
-    private processMessageofStreamedData(msg: any) {
-        this.chatControllerMessagePublishers.processMessageofStreamedData.publish({
-            command: msg.command,
-            tabID: msg.tabID,
-            messageId: msg.messageId,
-            totalCodeBlocks: msg.totalCodeBlocks,
-            tabType: msg.tabType,
-        })
-    }
-
     private processTabWasRemoved(msg: any) {
         this.chatControllerMessagePublishers.processTabClosedMessage.publish({
             tabID: msg.tabID,
@@ -211,6 +200,16 @@ export class UIMessageListener {
             tabID: msg.tabID,
             messageId: msg.messageId,
             userIntent: msg.userIntent !== '' ? msg.userIntent : undefined,
+        })
+    }
+
+    private processTotalCodeBlocksReceived(msg: any) {
+        this.chatControllerMessagePublishers.processTotalCodeBlocksReceived.publish({
+            command: msg.command,
+            tabID: msg.tabID,
+            messageId: msg.messageId,
+            totalCodeBlocks: msg.totalCodeBlocks,
+            tabType: msg.tabType,
         })
     }
 

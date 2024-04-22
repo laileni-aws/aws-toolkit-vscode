@@ -30,6 +30,6 @@ type MessageCommand =
     | 'footer-info-link-click'
     | 'file-click'
     | 'form-action-click'
-    | 'message-of-streamed-data'
+    | 'chat-stream-ended'
 
 export type ExtensionMessage = Record<string, any> & { command: MessageCommand }

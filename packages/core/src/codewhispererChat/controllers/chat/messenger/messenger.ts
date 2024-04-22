@@ -232,15 +232,6 @@ export class Messenger {
                         )
                     )
                 }
-                this.dispatcher.sendMessageResponseEnded(
-                    new StopResponseMessage(
-                        {
-                            messageID: messageID,
-                            stopResponse: true,
-                        },
-                        tabID
-                    )
-                )
 
                 this.dispatcher.sendChatMessage(
                     new ChatMessage(
@@ -257,6 +248,14 @@ export class Messenger {
                     )
                 )
 
+                this.dispatcher.sendChatStreamEnded(
+                    new StopResponseMessage(
+                        {
+                            messageID: messageID,
+                        },
+                        tabID
+                    )
+                )
                 getLogger().info(
                     `All events received. requestId=%s counts=%s`,
                     response.$metadata.requestId,

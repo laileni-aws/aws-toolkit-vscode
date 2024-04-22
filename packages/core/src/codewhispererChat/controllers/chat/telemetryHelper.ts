@@ -230,7 +230,7 @@ export class CWCTelemetryHelper {
                     cwsprChatInteractionTarget: message.link,
                 }
                 break
-            case 'message-of-streamed-data':
+            case 'chat-stream-ended':
                 message = message as MessageofStreamedData
                 event = {
                     result: 'Succeeded',
@@ -238,7 +238,7 @@ export class CWCTelemetryHelper {
                     cwsprChatMessageId: message.messageId,
                     cwsprChatConversationId: conversationId ?? '',
                     credentialStartUrl: AuthUtil.instance.startUrl,
-                    cwsprChatInteractionType: 'upvote',
+                    cwsprChatInteractionType: 'upvote', // Need to change to 'chat' in user-service.json and in vscodeTelemetry.json
                 }
                 break
         }

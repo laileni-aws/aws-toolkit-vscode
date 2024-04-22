@@ -48,6 +48,7 @@ export interface ConnectorProps {
     onNewTab: (tabType: TabType) => void
     onFileActionClick: (tabID: string, messageId: string, filePath: string, actionName: string) => void
     tabsStorage: TabsStorage
+    onChatAnswerStreamEnded?: (tabID: string, messageId: string) => void
 }
 
 export class Connector {
@@ -196,10 +197,10 @@ export class Connector {
         }
     }
 
-    handleMessageofStreamedData = (tabID: string, totalCodeBlocks: number, messageId: string): void => {
+    onTotalCodeBlocksReceived = (tabID: string, totalCodeBlocks: number, messageId: string): void => {
         switch (this.tabsStorage.getTab(tabID)?.type) {
             case 'cwc':
-                this.cwChatConnector.handleMessageofStreamedData(tabID, totalCodeBlocks, messageId)
+                this.cwChatConnector.onTotalCodeBlocksReceived(tabID, totalCodeBlocks, messageId)
                 break
         }
     }

@@ -65,7 +65,7 @@ export interface ChatControllerMessagePublishers {
     readonly processSourceLinkClick: MessagePublisher<SourceLinkClickMessage>
     readonly processResponseBodyLinkClick: MessagePublisher<ResponseBodyLinkClickMessage>
     readonly processFooterInfoLinkClick: MessagePublisher<FooterInfoLinkClick>
-    readonly processMessageofStreamedData: MessagePublisher<MessageofStreamedData>
+    readonly processTotalCodeBlocksReceived: MessagePublisher<MessageofStreamedData>
 }
 
 export interface ChatControllerMessageListeners {
@@ -85,7 +85,7 @@ export interface ChatControllerMessageListeners {
     readonly processSourceLinkClick: MessageListener<SourceLinkClickMessage>
     readonly processResponseBodyLinkClick: MessageListener<ResponseBodyLinkClickMessage>
     readonly processFooterInfoLinkClick: MessageListener<FooterInfoLinkClick>
-    readonly processMessageofStreamedData: MessageListener<MessageofStreamedData>
+    readonly processTotalCodeBlocksReceived: MessageListener<MessageofStreamedData>
 }
 
 export class ChatController {
@@ -147,8 +147,8 @@ export class ChatController {
             return this.processCopyCodeToClipboard(data)
         })
 
-        this.chatControllerMessageListeners.processMessageofStreamedData.onMessage(data => {
-            return this.processMessageofStreamedData(data)
+        this.chatControllerMessageListeners.processTotalCodeBlocksReceived.onMessage(data => {
+            return this.processTotalCodeBlocksReceived(data)
         })
 
         this.chatControllerMessageListeners.processContextMenuCommand.onMessage(data => {
@@ -317,7 +317,7 @@ export class ChatController {
         this.telemetryHelper.recordInteractWithMessage(message)
     }
 
-    private async processMessageofStreamedData(message: MessageofStreamedData) {
+    private async processTotalCodeBlocksReceived(message: MessageofStreamedData) {
         // Check the telemtry and trigger from here
         this.telemetryHelper.recordInteractWithMessage(message)
     }

@@ -223,15 +223,17 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
             }
 
             if (item.type === ChatItemType.ANSWER) {
-                if (item.messageId !== undefined) {
-                    const count = mynahUI.endMessageStream(tabID, item.messageId).totalNumberOfCodeBlocks
-                    connector.handleMessageofStreamedData(tabID, count === undefined ? 0 : count, item.messageId)
-                }
                 mynahUI.updateStore(tabID, {
                     loadingChat: false,
                     promptInputDisabledState: tabsStorage.isTabDead(tabID),
                 })
                 tabsStorage.updateTabStatus(tabID, 'free')
+            }
+        },
+        onChatAnswerStreamEnded: (tabID: string, messageId: string) => {
+            if (messageId !== undefined) {
+                const count = mynahUI.endMessageStream(tabID, messageId).totalNumberOfCodeBlocks
+                connector.onTotalCodeBlocksReceived(tabID, count === undefined ? 0 : count, messageId)
             }
         },
         onMessageReceived: (tabID: string, messageData: MynahUIDataModel) => {

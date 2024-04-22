@@ -167,17 +167,14 @@ export class ChatMessage extends UiMessage {
 
 export interface StopResponseMessageProps {
     readonly messageID: string
-    readonly stopResponse: boolean
 }
 
 export class StopResponseMessage extends UiMessage {
     readonly messageID: string | undefined
-    readonly stopResponse: boolean
-
+    override type = 'chatStreamEnded'
     constructor(props: StopResponseMessageProps, tabID: string) {
         super(tabID)
         this.messageID = props.messageID
-        this.stopResponse = props.stopResponse
     }
 }
 
@@ -271,7 +268,7 @@ export class AppToWebViewMessageDispatcher {
         this.appsToWebViewMessagePublisher.publish(message)
     }
 
-    public sendMessageResponseEnded(message: StopResponseMessage) {
+    public sendChatStreamEnded(message: StopResponseMessage) {
         this.appsToWebViewMessagePublisher.publish(message)
     }
 }

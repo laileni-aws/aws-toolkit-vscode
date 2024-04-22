@@ -18,6 +18,7 @@ export interface ConnectorProps {
     sendMessageToExtension: (message: ExtensionMessage) => void
     onMessageReceived?: (tabID: string, messageData: any, needToShowAPIDocsTab: boolean) => void
     onChatAnswerReceived?: (tabID: string, message: ChatItem) => void
+    onChatAnswerStreamEnded?: (tabID: string, messageId: string) => void
     onCWCContextCommandMessage: (message: ChatItem, command?: string) => string | undefined
     onError: (tabID: string, message: string, title: string) => void
     onWarning: (tabID: string, message: string, title: string) => void
@@ -29,12 +30,14 @@ export class Connector {
     private readonly onError
     private readonly onWarning
     private readonly onChatAnswerReceived
+    private readonly onChatAnswerStreamEnded
     private readonly onCWCContextCommandMessage
     private readonly followUpGenerator: FollowUpGenerator
 
     constructor(props: ConnectorProps) {
         this.sendMessageToExtension = props.sendMessageToExtension
         this.onChatAnswerReceived = props.onChatAnswerReceived
+        this.onChatAnswerStreamEnded = props.onChatAnswerStreamEnded
         this.onWarning = props.onWarning
         this.onError = props.onError
         this.onCWCContextCommandMessage = props.onCWCContextCommandMessage
@@ -123,10 +126,10 @@ export class Connector {
         })
     }
 
-    handleMessageofStreamedData = (tabID: string, totalCodeBlocks: number, messageId: string) => {
+    onTotalCodeBlocksReceived = (tabID: string, totalCodeBlocks: number, messageId: string) => {
         this.sendMessageToExtension({
             tabID: tabID,
-            command: 'message-of-streamed-data',
+            command: 'chat-stream-ended',
             tabType: 'cwc',
             messageId: messageId,
             totalCodeBlocks,
@@ -306,6 +309,14 @@ export class Connector {
         }
     }
 
+    private processChatStreamEnded = async (messageData: any): Promise<void> => {
+        if (this.onChatAnswerStreamEnded === undefined) {
+            return
+        }
+
+        this.onChatAnswerStreamEnded(messageData.tabID, messageData.messageID)
+    }
+
     private processAuthNeededException = async (messageData: any): Promise<void> => {
         if (this.onChatAnswerReceived === undefined) {
             return
@@ -334,6 +345,11 @@ export class Connector {
 
         if (messageData.type === 'chatMessage') {
             await this.processChatMessage(messageData)
+            return
+        }
+
+        if (messageData.type === 'chatStreamEnded') {
+            await this.processChatStreamEnded(messageData)
             return
         }
 
