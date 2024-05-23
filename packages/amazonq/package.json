@@ -633,6 +633,11 @@
                 "key": "left",
                 "command": "editor.action.inlineSuggest.showPrevious",
                 "when": "inlineSuggestionVisible && !editorReadonly && aws.codewhisperer.connected"
+            },
+            {
+                "key": "win+r",
+                "command": "aws.amazonq.security.scan",
+                "when": "aws.codewhisperer.connected"
             }
         ],
         "icons": {
