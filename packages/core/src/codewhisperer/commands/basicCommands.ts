@@ -285,6 +285,54 @@ export const openSecurityIssuePanel = Commands.declare(
     }
 )
 
+export const suppressFinding = Commands.declare(
+    'aws.amazonq.suppressFinding',
+    (context: ExtContext) => async (issue: CodeScanIssue) => {
+        try {
+            const response = await fetch('http://localhost:3000/api/finding', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ findingID: issue.findingId }),
+            })
+
+            if (response.ok) {
+                const data = await response.json()
+                vscode.window.showInformationMessage(
+                    `Amazon Q: Suppressed a finding using CodeGuru Security ${data.message} ${issue.findingId}`
+                )
+                // console.log(data)
+            } else {
+                vscode.window.showInformationMessage(
+                    `Amazon Q: Did not Suppressed a finding using CodeGuru Security- ${issue.findingId}`
+                )
+                // console.error('Error suppressing finding:', await response.text())
+            }
+        } catch (error) {
+            console.error('Error suppressing finding:', error)
+        }
+        /*
+        try {
+            const response = await axios.post('http://localhost:3000/api/finding', {
+                findingID: issue.findingId
+            });
+
+            vscode.window.showInformationMessage(
+                `Amazon Q: Suppressed a finding using CodeGuru Security- ${issue.findingId}`
+            )
+
+            console.log(response.data);
+        } catch (error) {
+            console.error('Error suppressing finding:', error);
+        }
+        */
+        // vscode.window.showInformationMessage(
+        //     `Amazon Q: Suppressed a finding using CodeGuru Security- ${issue.findingId}`
+        // )
+    }
+)
+
 export const notifyNewCustomizationsCmd = Commands.declare(
     { id: 'aws.amazonq.notifyNewCustomizations', logging: false },
     () => () => {

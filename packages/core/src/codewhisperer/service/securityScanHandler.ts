@@ -64,6 +64,7 @@ export async function listScanResults(
         mapToAggregatedList(codeScanIssueMap, issue)
     })
     codeScanIssueMap.forEach((issues, key) => {
+        // security-bandit-1.6-0eebde34fcc32f042f4d829002d6dca474daf45425b7 //
         // Project path example: /Users/username/project
         // Key example: project/src/main/java/com/example/App.java
         projectPaths.forEach(projectPath => {

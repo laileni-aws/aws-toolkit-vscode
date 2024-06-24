@@ -89,6 +89,15 @@ export class SecurityIssueHoverProvider extends SecurityIssueProvider implements
         )
         markdownString.appendMarkdown(' | ' + explainWithQCommand)
 
+        const suppressFindingCommand = this._getCommandMarkdown(
+            'aws.amazonq.suppressFinding',
+            [issue],
+            'comment',
+            'Suppress Finding',
+            'Suppress Finding with QCA' // hover label
+        )
+        markdownString.appendMarkdown(' | ' + suppressFindingCommand)
+
         if (suggestedFix) {
             const applyFixCommand = this._getCommandMarkdown(
                 'aws.amazonq.applySecurityFix',

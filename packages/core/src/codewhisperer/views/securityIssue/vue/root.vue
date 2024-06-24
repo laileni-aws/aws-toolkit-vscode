@@ -68,9 +68,11 @@
     </div>
 
     <hr />
-
-    <div class="mt-16">
-        <input type="submit" class="mr-8" @click="explainWithQ" value="Explain" />
+    <div class="flex-container" style="justify-content: space-between">
+        <div class="mt-16">
+            <input type="submit" class="mr-8" @click="explainWithQ" value="Explain" />
+            <input type="submit" class="mr-8" @click="suppressFinding" value="Suppress Finding" />
+        </div>
     </div>
 </template>
 
@@ -168,6 +170,9 @@ export default defineComponent({
         },
         explainWithQ() {
             client.explainWithQ()
+        },
+        suppressFinding() {
+            client.suppressFinding()
         },
         navigateToFile() {
             client.navigateToFile()
