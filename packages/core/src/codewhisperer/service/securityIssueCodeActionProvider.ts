@@ -73,7 +73,7 @@ export class SecurityIssueCodeActionProvider extends SecurityIssueProvider imple
                         `Amazon Q: Suppress Finding for "${issue.title}"`,
                         vscode.CodeActionKind.QuickFix
                     )
-                    const argsSupressFinding: [CodeScanIssue] = [issue]
+                    const argsSupressFinding: [CodeScanIssue, string] = [issue, group.filePath]
                     supressFinding.command = {
                         title: 'Suppress Finding with QCA',
                         command: 'aws.amazonq.suppressFinding',

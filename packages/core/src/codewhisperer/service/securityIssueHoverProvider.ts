@@ -91,7 +91,7 @@ export class SecurityIssueHoverProvider extends SecurityIssueProvider implements
 
         const suppressFindingCommand = this._getCommandMarkdown(
             'aws.amazonq.suppressFinding',
-            [issue],
+            [issue, filePath],
             'comment',
             'Suppress Finding',
             'Suppress Finding with QCA' // hover label

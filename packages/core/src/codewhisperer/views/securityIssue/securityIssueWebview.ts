@@ -44,7 +44,7 @@ export class SecurityIssueWebview extends VueWebview {
     }
 
     public suppressFinding() {
-        const args = [this.issue]
+        const args = [this.issue, this.filePath]
         // void this.navigateToFile()?.then(() => {
         void vscode.commands.executeCommand('aws.amazonq.suppressFinding', ...args)
         // })

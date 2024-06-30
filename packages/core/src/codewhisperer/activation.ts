@@ -217,7 +217,7 @@ export async function activate(context: ExtContext): Promise<void> {
         showSecurityScan.register(context, securityPanelViewProvider, client),
         // show security issue webview panel
         openSecurityIssuePanel.register(context),
-        // suppress Finding through CGS
+        // suppress finding
         suppressFinding.register(context),
         // sign in with sso or AWS ID
         showSsoSignIn.register(),

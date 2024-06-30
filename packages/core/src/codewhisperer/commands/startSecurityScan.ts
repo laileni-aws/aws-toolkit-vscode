@@ -37,7 +37,7 @@ import path from 'path'
 import { ZipMetadata, ZipUtil } from '../util/zipUtil'
 import { debounce } from 'lodash'
 import { once } from '../../shared/utilities/functionUtils'
-// import { randomUUID } from '../../common/crypto'
+import { randomUUID } from '../../common/crypto'
 import { CodeAnalysisScope } from '../models/constants'
 import { CodeScanJobFailedError, CreateCodeScanFailedError, SecurityScanError } from '../models/errors'
 
@@ -150,10 +150,10 @@ export async function startSecurityScan(
          */
         throwIfCancelled(scope, codeScanStartTime)
         let artifactMap: ArtifactMap = {}
-        const uploadStartTime = performance.now()
-        // const scanName = randomUUID()
+        const uploadStartTime = Math.floor(performance.now() / 1000)
+        const scanName = randomUUID()
         try {
-            artifactMap = await getPresignedUrlAndUpload(client, zipMetadata, scope, projectName) //scanName = projectName
+            artifactMap = await getPresignedUrlAndUpload(client, zipMetadata, scope, scanName)
         } finally {
             await zipUtil.removeTmpFiles(zipMetadata, scope)
             codeScanTelemetryEntry.artifactsUploadDuration = performance.now() - uploadStartTime
@@ -169,7 +169,7 @@ export async function startSecurityScan(
             artifactMap,
             codeScanTelemetryEntry.codewhispererLanguage,
             scope,
-            projectName ////scanName = projectName
+            scanName
         )
         if (scanJob.status === 'Failed') {
             logger.verbose(`${scanJob.errorMessage}`)
@@ -199,7 +199,8 @@ export async function startSecurityScan(
             scanJob.jobId,
             CodeWhispererConstants.codeScanFindingsSchema,
             projectPaths,
-            scope
+            scope,
+            editor
         )
         const { total, withFixes } = securityRecommendationCollection.reduce(
             (accumulator, current) => ({

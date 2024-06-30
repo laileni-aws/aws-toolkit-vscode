@@ -287,49 +287,29 @@ export const openSecurityIssuePanel = Commands.declare(
 
 export const suppressFinding = Commands.declare(
     'aws.amazonq.suppressFinding',
-    (context: ExtContext) => async (issue: CodeScanIssue) => {
+    (context: ExtContext) => async (issue: CodeScanIssue, filePath: string) => {
         try {
-            const response = await fetch('http://localhost:3000/api/finding', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ findingID: issue.findingId }),
-            })
+            // Open the file with the given filePath
+            const document = await vscode.workspace.openTextDocument(filePath)
+            const editor = await vscode.window.showTextDocument(document)
 
-            if (response.ok) {
-                const data = await response.json()
-                vscode.window.showInformationMessage(
-                    `Amazon Q: Suppressed a finding using CodeGuru Security ${data.message} ${issue.findingId}`
-                )
-                // console.log(data)
-            } else {
-                vscode.window.showInformationMessage(
-                    `Amazon Q: Did not Suppressed a finding using CodeGuru Security- ${issue.findingId}`
-                )
-                // console.error('Error suppressing finding:', await response.text())
+            const position = new vscode.Position(issue.startLine, 0)
+            let line = document.lineAt(issue.startLine - 1).text
+            if (!line.includes('AmazonQ: Suppress')) {
+                await editor.edit(editBuilder => {
+                    editBuilder.insert(position, '##AmazonQ: Suppress This Finding\n')
+                })
+                //Drop the finding
+                removeDiagnostic(document.uri, issue)
+                SecurityIssueHoverProvider.instance.removeIssue(document.uri, issue)
+                SecurityIssueCodeActionProvider.instance.removeIssue(document.uri, issue)
             }
+            // Save the modified file
+            await document.save()
         } catch (error) {
-            console.error('Error suppressing finding:', error)
+            //TODO: send telemetry error message
+            console.error('Error while suppressing finding:', error)
         }
-        /*
-        try {
-            const response = await axios.post('http://localhost:3000/api/finding', {
-                findingID: issue.findingId
-            });
-
-            vscode.window.showInformationMessage(
-                `Amazon Q: Suppressed a finding using CodeGuru Security- ${issue.findingId}`
-            )
-
-            console.log(response.data);
-        } catch (error) {
-            console.error('Error suppressing finding:', error);
-        }
-        */
-        // vscode.window.showInformationMessage(
-        //     `Amazon Q: Suppressed a finding using CodeGuru Security- ${issue.findingId}`
-        // )
     }
 )
 
