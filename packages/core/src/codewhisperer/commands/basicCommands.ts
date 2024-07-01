@@ -295,9 +295,15 @@ export const suppressFinding = Commands.declare(
 
             const position = new vscode.Position(issue.startLine, 0)
             let line = document.lineAt(issue.startLine - 1).text
+            let commentOfDocument = ''
+            if (document.languageId === 'python') {
+                commentOfDocument = '##'
+            } else {
+                commentOfDocument = '//'
+            }
             if (!line.includes('AmazonQ: Suppress')) {
                 await editor.edit(editBuilder => {
-                    editBuilder.insert(position, '##AmazonQ: Suppress This Finding\n')
+                    editBuilder.insert(position, `${commentOfDocument}AmazonQ: Suppress This Finding\n`)
                 })
                 //Drop the finding
                 removeDiagnostic(document.uri, issue)
