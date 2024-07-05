@@ -103,6 +103,15 @@ export class SecurityIssueHoverProvider extends SecurityIssueProvider implements
             markdownString.appendMarkdown(
                 `${this._makeCodeBlock(suggestedFix.code, issue.detectorId.split('/').shift())}\n`
             )
+        } else {
+            const generateFixCommand = this._getCommandMarkdown(
+                'aws.amazonq.generateSecurityFix',
+                [issue, filePath, 'hover'],
+                'wrench',
+                'Generate Fix',
+                'Generate Fix with Amazon Q'
+            )
+            markdownString.appendMarkdown(' | ' + generateFixCommand)
         }
 
         return markdownString
@@ -156,10 +165,10 @@ export class SecurityIssueHoverProvider extends SecurityIssueProvider implements
                     section.startsWith('-')
                         ? '--vscode-diffEditor-removedTextBackground'
                         : section.startsWith('+')
-                          ? '--vscode-diffEditor-insertedTextBackground'
-                          : section.startsWith('@@')
-                            ? '--vscode-editorMarkerNavigationInfo-headerBackground'
-                            : '--vscode-diffEditor-unchangedCodeBackground'
+                        ? '--vscode-diffEditor-insertedTextBackground'
+                        : section.startsWith('@@')
+                        ? '--vscode-editorMarkerNavigationInfo-headerBackground'
+                        : '--vscode-diffEditor-unchangedCodeBackground'
                 });">
 
 \`\`\`${section.startsWith('-') || section.startsWith('+') ? 'diff' : section.startsWith('@@') ? undefined : language}
