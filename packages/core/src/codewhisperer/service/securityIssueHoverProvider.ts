@@ -103,6 +103,15 @@ export class SecurityIssueHoverProvider extends SecurityIssueProvider implements
             markdownString.appendMarkdown(
                 `${this._makeCodeBlock(suggestedFix.code, issue.detectorId.split('/').shift())}\n`
             )
+        } else {
+            const generateFixCommand = this._getCommandMarkdown(
+                'aws.amazonq.generateSecurityFix',
+                [issue, filePath, 'hover'],
+                'wrench',
+                'Generate Fix',
+                'Generate Fix with Amazon Q'
+            )
+            markdownString.appendMarkdown(' | ' + generateFixCommand)
         }
 
         return markdownString

@@ -339,6 +339,137 @@ export const installAmazonQExtension = Commands.declare(
         focusQAfterDelay()
     }
 )
+/*
+TODO:
+    Show the notification of generating fix while fix is getting generated from the backend.
+    open a diff view of original code and changed code
+    Give an option in the diff is possibe or given in showInformation box whether they want to accept the changed code ?
+    If accepted the changed code then paste the code to the editor and close the opendiff and show the editor file with removing the yellow lines on the issue.
+    If user discarded the generate fix Do nothing
+    Add telemetry for every action.
+*/
+
+export const generateSecurityFix = Commands.declare(
+    'aws.amazonq.generateSecurityFix',
+    () => async (issue: CodeScanIssue, filePath: string, source: Component) => {
+        /* Working
+        return vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                // title: CodeWhispererConstants.runningSecurityScan,
+                title: "Generating security fix...",
+                cancellable: false,
+            },
+            async () => {
+                const uri = vscode.Uri.file(filePath);
+
+                try {
+                    const originalDoc = await vscode.workspace.openTextDocument(uri);
+                    const originalCode = originalDoc.getText();
+
+                    const originalTempUri = vscode.Uri.parse(`${uri.fsPath}`);
+                    const changedTempUri = vscode.Uri.parse(`untitled:changed_${uri.fsPath}`);
+              
+                    await vscode.workspace.openTextDocument(changedTempUri).then(async doc => {
+                      const edit = new vscode.WorkspaceEdit();
+                      edit.insert(changedTempUri, new vscode.Position(0, 0), originalCode.toUpperCase());
+                      const success = await vscode.workspace.applyEdit(edit)
+                    });
+                    await vscode.commands.executeCommand(
+                        'vscode.diff',
+                        originalTempUri,
+                        changedTempUri,
+                        `Diff: ${uri.fsPath}`
+                      );
+
+                    } catch (error) {
+                        vscode.window.showErrorMessage(`Failed to show diff: ${error.message}`);
+                      }
+            }
+        )
+        // void vscode.window.showInformationMessage(`Generating security fix...`)
+        */
+
+        return vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: 'Generating security fix...',
+                cancellable: false,
+            },
+            async () => {
+                const uri = vscode.Uri.file(filePath)
+
+                try {
+                    const originalDoc = await vscode.workspace.openTextDocument(uri)
+                    const originalCode = originalDoc.getText()
+
+                    const originalTempUri = vscode.Uri.parse(`${uri.fsPath}`)
+                    const changedTempUri = vscode.Uri.parse(`untitled:changed_${uri.fsPath}`)
+
+                    await vscode.workspace.openTextDocument(changedTempUri).then(async (doc) => {
+                        const edit = new vscode.WorkspaceEdit()
+                        edit.insert(changedTempUri, new vscode.Position(0, 0), originalCode.toUpperCase())
+                        const success = await vscode.workspace.applyEdit(edit)
+                    })
+
+                    const diffResult = await vscode.commands.executeCommand(
+                        'vscode.diff',
+                        originalTempUri,
+                        changedTempUri,
+                        `Diff: ${uri.fsPath}`
+                    )
+
+                    // Prompt user to accept or ignore the changes
+                    const acceptChanges = 'Accept Changes'
+                    const ignoreChanges = 'Ignore Changes'
+
+                    const userChoice = await vscode.window.showInformationMessage(
+                        'Do you want to accept the changes?',
+                        { modal: true },
+                        acceptChanges,
+                        ignoreChanges
+                    )
+
+                    if (userChoice === acceptChanges) {
+                        // Apply changes to the original document
+                        const edit = new vscode.WorkspaceEdit()
+                        edit.replace(
+                            uri,
+                            new vscode.Range(
+                                new vscode.Position(0, 0),
+                                originalDoc.lineAt(originalDoc.lineCount - 1).range.end
+                            ),
+                            originalCode.toUpperCase()
+                        )
+                        const success = await vscode.workspace.applyEdit(edit)
+                        if (success) {
+                            await originalDoc.save()
+                            vscode.window.showInformationMessage('Changes applied successfully!')
+                        } else {
+                            vscode.window.showErrorMessage('Failed to apply changes.')
+                        }
+                    } else {
+                        vscode.window.showInformationMessage('Changes ignored.')
+                    }
+                    await vscode.commands.executeCommand('workbench.action.closeActiveEditor')
+                    const changedDoc = await vscode.workspace.openTextDocument(changedTempUri)
+                    const discardEdit = new vscode.WorkspaceEdit()
+                    discardEdit.replace(
+                        changedTempUri,
+                        new vscode.Range(
+                            new vscode.Position(0, 0),
+                            changedDoc.lineAt(changedDoc.lineCount - 1).range.end
+                        ),
+                        ''
+                    )
+                    await vscode.workspace.applyEdit(discardEdit)
+                } catch (error) {
+                    vscode.window.showErrorMessage(`Failed to show diff: ${error.message}`)
+                }
+            }
+        )
+    }
+)
 
 export const applySecurityFix = Commands.declare(
     'aws.amazonq.applySecurityFix',

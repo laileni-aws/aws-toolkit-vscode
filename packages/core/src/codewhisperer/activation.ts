@@ -38,6 +38,7 @@ import {
     notifyNewCustomizationsCmd,
     connectWithCustomization,
     applySecurityFix,
+    generateSecurityFix,
     signoutCodeWhisperer,
     toggleCodeScans,
     registerToolkitApiCallback,
@@ -236,6 +237,8 @@ export async function activate(context: ExtContext): Promise<void> {
         refreshStatusBar.register(),
         // apply suggested fix
         applySecurityFix.register(),
+        // generate fix using Amazon Q
+        generateSecurityFix.register(),
         // quick pick with codewhisperer options
         listCodeWhispererCommands.register(),
         // manual trigger
