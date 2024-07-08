@@ -67,6 +67,7 @@ export async function listScanResults(
         mapToAggregatedList(codeScanIssueMap, issue, editor, scope)
     })
     codeScanIssueMap.forEach((issues, key) => {
+        // security-bandit-1.6-0eebde34fcc32f042f4d829002d6dca474daf45425b7 //
         // Project path example: /Users/username/project
         // Key example: project/src/main/java/com/example/App.java
         projectPaths.forEach(projectPath => {
@@ -123,7 +124,7 @@ export function mapToAggregatedList(
             for (let lineNumber = issue.startLine; lineNumber <= issue.endLine; lineNumber++) {
                 const line = editor.document.lineAt(lineNumber - 1)?.text
                 const codeContent = issue.codeSnippet.find(codeIssue => codeIssue.number === lineNumber)?.content
-                if (line !== codeContent) {
+                if (line !== codeContent || editor.document.lineAt(lineNumber - 2)?.text.includes('AmazonQ:')) {
                     return false
                 }
             }

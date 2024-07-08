@@ -150,7 +150,7 @@ export async function startSecurityScan(
          */
         throwIfCancelled(scope, codeScanStartTime)
         let artifactMap: ArtifactMap = {}
-        const uploadStartTime = performance.now()
+        const uploadStartTime = Math.floor(performance.now() / 1000)
         const scanName = randomUUID()
         try {
             artifactMap = await getPresignedUrlAndUpload(client, zipMetadata, scope, scanName)

@@ -68,6 +68,18 @@ export class SecurityIssueCodeActionProvider extends SecurityIssueProvider imple
                         arguments: explainWithQArgs,
                     }
                     codeActions.push(explainWithQ)
+
+                    const supressFinding = new vscode.CodeAction(
+                        `Amazon Q: Suppress Finding for "${issue.title}"`,
+                        vscode.CodeActionKind.QuickFix
+                    )
+                    const argsSupressFinding: [CodeScanIssue, string] = [issue, group.filePath]
+                    supressFinding.command = {
+                        title: 'Suppress Finding with QCA',
+                        command: 'aws.amazonq.suppressFinding',
+                        arguments: argsSupressFinding,
+                    }
+                    codeActions.push(supressFinding)
                 }
             }
         }

@@ -34,6 +34,7 @@ import {
     showIntroduction,
     reconnect,
     openSecurityIssuePanel,
+    suppressFinding,
     selectCustomizationPrompt,
     notifyNewCustomizationsCmd,
     connectWithCustomization,
@@ -222,6 +223,8 @@ export async function activate(context: ExtContext): Promise<void> {
         showSecurityScan.register(context, securityPanelViewProvider, client),
         // show security issue webview panel
         openSecurityIssuePanel.register(context),
+        // suppress finding
+        suppressFinding.register(context),
         // sign in with sso or AWS ID
         showSsoSignIn.register(),
         // show reconnect prompt
