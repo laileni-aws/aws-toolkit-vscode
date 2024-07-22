@@ -109,6 +109,14 @@ export class CodeSuggestionsState {
     }
 }
 
+/**
+ * Security Scan Interfaces for File Scans.
+ */
+enum CodeScansStatus {
+    NotStarted,
+    Running
+}
+
 export class CodeScansState {
     /** The initial state if scan state was not defined */
     #fallback: boolean
@@ -126,6 +134,24 @@ export class CodeScansState {
 
     protected constructor(fallback: boolean = true) {
         this.#fallback = fallback
+    }
+
+    private codeScansState: CodeScansStatus = CodeScansStatus.NotStarted
+
+    public isNotStarted() {
+        return this.codeScansState === CodeScansStatus.NotStarted
+    }
+
+    public isRunning() {
+        return this.codeScansState === CodeScansStatus.Running
+    }
+
+    public setToNotStarted() {
+        this.codeScansState = CodeScansStatus.NotStarted
+    }
+
+    public setToRunning() {
+        this.codeScansState = CodeScansStatus.Running
     }
 
     async toggleScans() {

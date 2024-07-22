@@ -327,8 +327,9 @@ export async function activate(context: ExtContext): Promise<void> {
 
     function shouldRunAutoScan(editor: vscode.TextEditor | undefined, isScansEnabled?: boolean) {
         return (
-            (isScansEnabled ?? CodeScansState.instance.isScansEnabled()) &&
+            (isScansEnabled ?? CodeScansState.instance. isScansEnabled()) &&
             !CodeScansState.instance.isMonthlyQuotaExceeded() &&
+            CodeScansState.instance.isNotStarted() &&
             auth.isConnectionValid() &&
             !auth.isBuilderIdInUse() &&
             editor &&

@@ -102,6 +102,7 @@ export async function startSecurityScan(
     const codeScanStartTime = performance.now()
     if (scope === CodeAnalysisScope.FILE) {
         CodeScansState.instance.setLatestScanTime(codeScanStartTime)
+        CodeScansState.instance.setToRunning()
     }
     let serviceInvocationStartTime = 0
     const codeScanTelemetryEntry: CodeScanTelemetryEntry = {
@@ -257,6 +258,7 @@ export async function startSecurityScan(
         codeScanTelemetryEntry.reason = (error as ToolkitError)?.code ?? 'DefaultError'
     } finally {
         codeScanState.setToNotStarted()
+        CodeScansState.instance.setToNotStarted()
         codeScanTelemetryEntry.duration = performance.now() - codeScanStartTime
         codeScanTelemetryEntry.codeScanServiceInvocationsDuration = performance.now() - serviceInvocationStartTime
         await emitCodeScanTelemetry(codeScanTelemetryEntry, scope)
