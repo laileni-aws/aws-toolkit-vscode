@@ -7,6 +7,8 @@ import { ToolkitError } from '../shared/errors'
 import { featureName } from './constants'
 import { uploadCodeError } from './userFacingText'
 
+export const CodeGenerationDefaultError = "I'm sorry, I'm having trouble generating your code."
+
 export class ConversationIdNotFoundError extends ToolkitError {
     constructor() {
         super('Conversation id must exist before starting code generation', { code: 'ConversationIdNotFound' })
@@ -14,8 +16,12 @@ export class ConversationIdNotFoundError extends ToolkitError {
 }
 
 export class TabIdNotFoundError extends ToolkitError {
-    constructor(query: string) {
-        super(`Tab id was not found from ${query}`, { code: 'TabIdNotFound' })
+    static errorName = 'TabIdNotFoundError'
+
+    constructor() {
+        super(`I'm sorry, I'm having technical difficulties at the moment. Please try again.`, {
+            code: 'TabIdNotFound',
+        })
     }
 }
 
@@ -37,15 +43,18 @@ export class WorkspaceFolderNotFoundError extends ToolkitError {
 }
 
 export class UserMessageNotFoundError extends ToolkitError {
+    static errorName = 'UserMessageNotFoundError'
     constructor() {
-        super(`Message was not found`, { code: 'MessageNotFound' })
+        super(`It looks like you didn't provide an input. Please enter your message in the text bar.`, {
+            code: 'MessageNotFound',
+        })
     }
 }
 
 export class SelectedFolderNotInWorkspaceFolderError extends ToolkitError {
     constructor() {
         super(
-            `The selected folder is not in an opened workspace folder. Add the selected folder to the workspace or pick a new folder`,
+            `The folder you chose isn't in your open workspace folder. You can add this folder to your workspace, or choose a folder in your open workspace.`,
             {
                 code: 'SelectedFolderNotInWorkspaceFolder',
             }
@@ -53,13 +62,36 @@ export class SelectedFolderNotInWorkspaceFolderError extends ToolkitError {
     }
 }
 
-export class PrepareRepoFailedError extends ToolkitError {
+export class PromptRefusalException extends ToolkitError {
+    static errorName = 'PromptRefusalException'
     constructor() {
-        super('Unable to prepare repository for uploading', { code: 'PrepareRepoFailed' })
+        super(
+            'I\'m sorry, I can\'t generate code for your request. Please make sure your message and code files comply with the <a href="https://aws.amazon.com/machine-learning/responsible-ai/policy/">AWS Responsible AI Policy.</a>',
+            {
+                code: 'PromptRefusalException',
+            }
+        )
+    }
+}
+
+export class FeatureDevServiceError extends ToolkitError {
+    static errorName = 'FeatureDevServiceError'
+    constructor(message: string, code: string) {
+        super(message, { code })
+    }
+}
+
+export class PrepareRepoFailedError extends ToolkitError {
+    static errorName = 'PrepareRepoFailedError'
+    constructor() {
+        super('Sorry, I ran into an issue while trying to upload your code. Please try again.', {
+            code: 'PrepareRepoFailed',
+        })
     }
 }
 
 export class UploadCodeError extends ToolkitError {
+    static errorName = 'UploadCodeError'
     constructor(statusCode: string) {
         super(uploadCodeError, { code: `UploadCode-${statusCode}` })
     }
@@ -72,35 +104,46 @@ export class IllegalStateTransition extends ToolkitError {
 }
 
 export class ContentLengthError extends ToolkitError {
+    static errorName = 'ContentLengthError'
     constructor() {
         super(
-            'The project you have selected for source code is too large to use as context. Please select a different folder to use for this conversation',
-            { code: 'ContentLengthError' }
+            'The folder you selected is too large for me to use as context. Please choose a smaller folder to work on. For more information on quotas, see the <a href="https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/software-dev.html#quotas" target="_blank">Amazon Q Developer documentation.</a>',
+            { code: ContentLengthError.errorName }
         )
     }
 }
 
+export class ZipFileError extends ToolkitError {
+    static errorName = 'ZipFileError'
+    constructor() {
+        super('The zip file is corrupted', { code: ZipFileError.errorName })
+    }
+}
+
 export class PlanIterationLimitError extends ToolkitError {
+    static errorName = 'PlanIterationLimitError'
     constructor() {
         super(
-            'You have reached the free tier limit for number of iterations on an implementation plan. Please proceed to generating code or start to discuss a new plan.',
-            { code: 'PlanIterationLimitError' }
+            'Sorry, you\'ve reached the quota for number of iterations on an implementation plan. You can generate code for this task or discuss a new plan. For more information on quotas, see the <a href="https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/software-dev.html#quotas">Amazon Q Developer documentation</a>.',
+            { code: PlanIterationLimitError.errorName }
         )
     }
 }
 
 export class CodeIterationLimitError extends ToolkitError {
+    static errorName = 'CodeIterationLimitError'
     constructor() {
         super(
-            'You have reached the free tier limit for number of iterations on a code generation. Please proceed to accept the code or start a new conversation.',
-            { code: 'CodeIterationLimitError' }
+            'Sorry, you\'ve reached the quota for number of iterations on code generation. You can insert this code in your files or discuss a new plan. For more information on quotas, see the <a href="https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/software-dev.html#quotas" target="_blank">Amazon Q Developer documentation.</a>',
+            { code: CodeIterationLimitError.errorName }
         )
     }
 }
 
 export class MonthlyConversationLimitError extends ToolkitError {
+    static errorName = 'MonthlyConversationLimitError'
     constructor(message: string) {
-        super(message, { code: 'MonthlyConversationLimitError' })
+        super(message, { code: MonthlyConversationLimitError.errorName })
     }
 }
 
@@ -116,10 +159,10 @@ export class ApiError extends ToolkitError {
     }
 }
 
-const denyListedErrors: string[] = ['Deserialization error', 'Inaccessible host']
+export const denyListedErrors: string[] = ['Deserialization error', 'Inaccessible host']
 
 export function createUserFacingErrorMessage(message: string) {
-    if (denyListedErrors.some(err => message.includes(err))) {
+    if (denyListedErrors.some((err) => message.includes(err))) {
         return `${featureName} API request failed`
     }
     return message

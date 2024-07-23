@@ -19,7 +19,7 @@ import globals from '../extensionGlobals'
 import { ClassToInterfaceType } from '../utilities/tsUtils'
 import { getClientId, validateMetricEvent } from './util'
 import { telemetry } from './telemetry'
-import { fsCommon } from '../../srcShared/fs'
+import fs from '../fs/fs'
 
 export type TelemetryService = ClassToInterfaceType<DefaultTelemetryService>
 
@@ -49,12 +49,11 @@ export class DefaultTelemetryService {
      * Use {@link create}() to create an instance of this class.
      */
     protected constructor(
-        private readonly context: ExtensionContext,
         private readonly awsContext: AwsContext,
         private readonly computeRegion?: string,
         publisher?: TelemetryPublisher
     ) {
-        this.persistFilePath = path.join(context.globalStorageUri.fsPath, 'telemetryCache')
+        this.persistFilePath = path.join(globals.context.globalStorageUri.fsPath, 'telemetryCache')
 
         this.startTime = new globals.clock.Date()
 
@@ -70,14 +69,9 @@ export class DefaultTelemetryService {
      * This exists since we need to first ensure the global storage
      * path exists before creating the instance.
      */
-    static async create(
-        context: ExtensionContext,
-        awsContext: AwsContext,
-        computeRegion?: string,
-        publisher?: TelemetryPublisher
-    ) {
-        await DefaultTelemetryService.ensureGlobalStorageExists(context)
-        return new DefaultTelemetryService(context, awsContext, computeRegion, publisher)
+    static async create(awsContext: AwsContext, computeRegion?: string, publisher?: TelemetryPublisher) {
+        await DefaultTelemetryService.ensureGlobalStorageExists(globals.context)
+        return new DefaultTelemetryService(awsContext, computeRegion, publisher)
     }
 
     public get logger(): TelemetryLogger {
@@ -104,7 +98,7 @@ export class DefaultTelemetryService {
             telemetry.session_end.emit({ value: currTime.getTime() - this.startTime.getTime(), result: 'Succeeded' })
 
             try {
-                await fsCommon.writeFile(this.persistFilePath, JSON.stringify(this._eventQueue))
+                await fs.writeFile(this.persistFilePath, JSON.stringify(this._eventQueue))
             } catch {}
         }
     }
@@ -112,16 +106,16 @@ export class DefaultTelemetryService {
     public get telemetryEnabled(): boolean {
         return this._telemetryEnabled
     }
-    public set telemetryEnabled(value: boolean) {
+    public async setTelemetryEnabled(value: boolean) {
         if (this._telemetryEnabled !== value) {
-            getLogger().verbose(`Telemetry is now ${value ? 'enabled' : 'disabled'}`)
-        }
+            this._telemetryEnabled = value
 
-        // clear the queue on explicit disable
-        if (!value) {
-            this.clearRecords()
+            // send all the gathered data that the user was opted-in for, prior to disabling
+            if (!value) {
+                await this._flushRecords()
+            }
         }
-        this._telemetryEnabled = value
+        getLogger().verbose(`Telemetry is ${value ? 'enabled' : 'disabled'}`)
     }
 
     public get timer(): NodeJS.Timer | undefined {
@@ -167,21 +161,31 @@ export class DefaultTelemetryService {
      * VSCode provides the URI of the folder, but it is not guaranteed to exist.
      */
     private static async ensureGlobalStorageExists(context: ExtensionContext): Promise<void> {
-        if (!fsCommon.existsFile(context.globalStorageUri)) {
-            await fsCommon.mkdir(context.globalStorageUri)
+        if (!fs.existsFile(context.globalStorageUri)) {
+            await fs.mkdir(context.globalStorageUri)
         }
     }
 
+    /**
+     * Publish metrics to the Telemetry Service.
+     */
     private async flushRecords(): Promise<void> {
         if (this.telemetryEnabled) {
-            if (this.publisher === undefined) {
-                await this.createDefaultPublisherAndClient()
-            }
-            if (this.publisher !== undefined) {
-                this.publisher.enqueue(...this._eventQueue)
-                await this.publisher.flush()
-                this.clearRecords()
-            }
+            await this._flushRecords()
+        }
+    }
+
+    /**
+     * @warning DO NOT USE DIRECTLY, use `flushRecords()` instead.
+     */
+    private async _flushRecords(): Promise<void> {
+        if (this.publisher === undefined) {
+            await this.createDefaultPublisherAndClient()
+        }
+        if (this.publisher !== undefined) {
+            this.publisher.enqueue(...this._eventQueue)
+            await this.publisher.flush()
+            this.clearRecords()
         }
     }
 
@@ -206,11 +210,12 @@ export class DefaultTelemetryService {
     private async createDefaultPublisher(): Promise<TelemetryPublisher | undefined> {
         try {
             // grab our clientId and generate one if it doesn't exist
-            const clientId = await getClientId(this.context.globalState)
+            const clientId = getClientId(globals.globalState)
             // grab our Cognito identityId
             const poolId = DefaultTelemetryClient.config.identityPool
-            const identityMapJson = this.context.globalState.get<string>(
+            const identityMapJson = globals.globalState.tryGet(
                 DefaultTelemetryService.telemetryCognitoIdKey,
+                String,
                 '[]'
             )
             // Maps don't cleanly de/serialize with JSON.parse/stringify so we need to do it ourselves
@@ -224,7 +229,7 @@ export class DefaultTelemetryService {
 
                 // save it
                 identityMap.set(poolId, identityPublisherTuple.cognitoIdentityId)
-                await this.context.globalState.update(
+                await globals.globalState.update(
                     DefaultTelemetryService.telemetryCognitoIdKey,
                     JSON.stringify(Array.from(identityMap.entries()))
                 )
@@ -235,7 +240,7 @@ export class DefaultTelemetryService {
                 return DefaultTelemetryPublisher.fromIdentityId(clientId, identity)
             }
         } catch (err) {
-            console.error(`Got ${err} while initializing telemetry publisher`)
+            getLogger().error(`Got ${err} while initializing telemetry publisher`)
         }
     }
 
@@ -290,12 +295,12 @@ export class DefaultTelemetryService {
 
     private static async readEventsFromCache(cachePath: string): Promise<MetricDatum[]> {
         try {
-            if ((await fsCommon.existsFile(cachePath)) === false) {
-                getLogger().info(`telemetry cache not found: '${cachePath}'`)
+            if ((await fs.existsFile(cachePath)) === false) {
+                getLogger().debug('telemetry cache not found, skipping')
 
                 return []
             }
-            const input = JSON.parse(await fsCommon.readFileAsString(cachePath))
+            const input = JSON.parse(await fs.readFileAsString(cachePath))
             const events = filterTelemetryCacheEvents(input)
 
             return events

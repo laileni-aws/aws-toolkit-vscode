@@ -6,10 +6,17 @@
 import * as path from 'path'
 
 import { ConversationNotStartedState, PrepareCodeGenState, PrepareRefinementState } from './sessionState'
-import type { DeletedFileInfo, Interaction, NewFileInfo, SessionState, SessionStateConfig } from '../types'
+import {
+    DevPhase,
+    type DeletedFileInfo,
+    type Interaction,
+    type NewFileInfo,
+    type SessionState,
+    type SessionStateConfig,
+} from '../types'
 import { ConversationIdNotFoundError } from '../errors'
 import { referenceLogText } from '../constants'
-import { FileSystemCommon } from '../../srcShared/fs'
+import fs from '../../shared/fs/fs'
 import { Messenger } from '../controllers/chat/messenger/messenger'
 import { FeatureDevClient } from '../client/featureDev'
 import { approachRetryLimit, codeGenRetryLimit } from '../limits'
@@ -18,8 +25,6 @@ import { telemetry } from '../../shared/telemetry/telemetry'
 import { TelemetryHelper } from '../util/telemetryHelper'
 import { ReferenceLogViewProvider } from '../../codewhisperer/service/referenceLogViewProvider'
 import { AuthUtil } from '../../codewhisperer/util/authUtil'
-
-const fs = FileSystemCommon.instance
 
 export class Session {
     private _state?: SessionState | Omit<SessionState, 'uploadId'>
@@ -61,6 +66,7 @@ export class Session {
             await this.setupConversation(msg)
             this.preloaderFinished = true
             this.messenger.sendAsyncEventProgress(this.tabID, true, undefined)
+            await this.proxyClient.sendFeatureDevTelemetryEvent(this.conversationId) // send the event only once per conversation.
         }
     }
 
@@ -73,7 +79,7 @@ export class Session {
         // Store the initial message when setting up the conversation so that if it fails we can retry with this message
         this._latestMessage = msg
 
-        await telemetry.amazonq_startConversationInvoke.run(async span => {
+        await telemetry.amazonq_startConversationInvoke.run(async (span) => {
             this._conversationId = await this.proxyClient.createConversation()
             span.record({ amazonqConversationId: this._conversationId, credentialStartUrl: AuthUtil.instance.startUrl })
         })
@@ -125,6 +131,7 @@ export class Session {
             amazonqConversationId: this.conversationId,
             enabled: true,
             result: 'Succeeded',
+            credentialStartUrl: AuthUtil.instance.startUrl,
         })
     }
 
@@ -166,12 +173,17 @@ export class Session {
         return resp.interaction
     }
 
-    public async updateFilesPaths(tabID: string, filePaths: NewFileInfo[], deletedFiles: DeletedFileInfo[]) {
-        this.messenger.updateFileComponent(tabID, filePaths, deletedFiles)
+    public async updateFilesPaths(
+        tabID: string,
+        filePaths: NewFileInfo[],
+        deletedFiles: DeletedFileInfo[],
+        messageId: string
+    ) {
+        this.messenger.updateFileComponent(tabID, filePaths, deletedFiles, messageId)
     }
 
     public async insertChanges() {
-        for (const filePath of this.state.filePaths?.filter(i => !i.rejected) ?? []) {
+        for (const filePath of this.state.filePaths?.filter((i) => !i.rejected) ?? []) {
             const absolutePath = path.join(filePath.workspaceFolder.uri.fsPath, filePath.relativePath)
 
             const uri = filePath.virtualMemoryUri
@@ -182,7 +194,7 @@ export class Session {
             await fs.writeFile(absolutePath, decodedContent)
         }
 
-        for (const filePath of this.state.deletedFiles?.filter(i => !i.rejected) ?? []) {
+        for (const filePath of this.state.deletedFiles?.filter((i) => !i.rejected) ?? []) {
             const absolutePath = path.join(filePath.workspaceFolder.uri.fsPath, filePath.relativePath)
             await fs.delete(absolutePath)
         }
@@ -208,9 +220,9 @@ export class Session {
 
     get retries() {
         switch (this.state.phase) {
-            case 'Approach':
+            case DevPhase.APPROACH:
                 return this.approachRetries
-            case 'Codegen':
+            case DevPhase.CODEGEN:
                 return this.codeGenRetries
             default:
                 return this.approachRetries
@@ -219,10 +231,10 @@ export class Session {
 
     decreaseRetries() {
         switch (this.state.phase) {
-            case 'Approach':
+            case DevPhase.APPROACH:
                 this.approachRetries -= 1
                 break
-            case 'Codegen':
+            case DevPhase.CODEGEN:
                 this.codeGenRetries -= 1
                 break
         }

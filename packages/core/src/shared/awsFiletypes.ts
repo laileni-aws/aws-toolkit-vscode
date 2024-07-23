@@ -8,8 +8,8 @@ import * as path from 'path'
 import * as constants from '../shared/constants'
 import * as aslFormats from '../stepFunctions/constants/aslFormats'
 import * as fsutil from '../shared/filesystemUtilities'
-import * as sysutil from '../shared/systemUtilities'
 import * as collectionUtil from '../shared/utilities/collectionUtils'
+import fs from '../shared/fs/fs'
 import globals from './extensionGlobals'
 import { telemetry } from './telemetry/telemetry'
 import { AwsFiletype } from './telemetry/telemetry'
@@ -41,7 +41,7 @@ export function langidToAwsFiletype(langId: string): AwsFiletype {
 
 /** Returns true if file `f` is somewhere in `~/.aws`. */
 export function isAwsConfig(f: string): boolean {
-    const awsDir = path.join(sysutil.SystemUtilities.getHomeDirectory(), '.aws')
+    const awsDir = path.join(fs.getUserHomeDir(), '.aws')
     if (fsutil.isInDirectory(awsDir, f)) {
         return true
     }
@@ -118,9 +118,9 @@ export function activate(): void {
 
 async function isSameMetricPending(filetype: string, fileExt: string | undefined): Promise<boolean> {
     const pendingMetrics = await collectionUtil.first(
-        globals.telemetry.findIter(m => {
-            const m1 = m.Metadata?.find(o => o.Key === 'awsFiletype')
-            const m2 = m.Metadata?.find(o => o.Key === 'filenameExt')
+        globals.telemetry.findIter((m) => {
+            const m1 = m.Metadata?.find((o) => o.Key === 'awsFiletype')
+            const m2 = m.Metadata?.find((o) => o.Key === 'filenameExt')
             return m.MetricName === 'file_editAwsFile' && m1?.Value === filetype && m2?.Value === fileExt
         })
     )

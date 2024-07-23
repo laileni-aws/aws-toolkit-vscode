@@ -12,7 +12,7 @@ import assert from 'assert'
 import { getSha256, uploadArtifactToS3, zipCode } from '../../codewhisperer/service/transformByQ/transformApiHandler'
 import request from '../../common/request'
 import AdmZip from 'adm-zip'
-import { setValidConnection } from '../util/amazonQUtil'
+import { setValidConnection } from '../util/connection'
 import { transformByQState, ZipManifest } from '../../codewhisperer/models/model'
 
 describe('transformByQ', async function () {
@@ -98,7 +98,7 @@ describe('transformByQ', async function () {
     it('WHEN zipCode THEN ZIP contains all expected files and no unexpected files', async function () {
         const zipFiles = new AdmZip(zippedCodePath).getEntries()
         const zipFileNames: string[] = []
-        zipFiles.forEach(file => {
+        zipFiles.forEach((file) => {
             zipFileNames.push(file.name)
         })
         assert.strictEqual(zipFileNames.length, 2) // expecting only a dummy txt file and a manifest.json

@@ -44,7 +44,7 @@ import { AuthUtil } from '../../util/authUtil'
 import { createCodeWhispererChatStreamingClient } from '../../../shared/clients/codewhispererChatClient'
 import { downloadExportResultArchive } from '../../../shared/utilities/download'
 import { ExportIntent, TransformationDownloadArtifactType } from '@amzn/codewhisperer-streaming'
-import { fsCommon } from '../../../srcShared/fs'
+import fs2 from '../../../shared/fs/fs'
 import { ChatSessionManager } from '../../../amazonqGumby/chat/storages/chatSession'
 import { convertToTimeString, encodeHTML } from '../../../shared/utilities/textUtilities'
 
@@ -111,7 +111,7 @@ export async function uploadArtifactToS3(
     try {
         const uploadFileByteSize = (await fs.promises.stat(fileName)).size
         getLogger().info(
-            `Uploading zip at %s with checksum %s using uploadId: %s and size %s kB`,
+            `Uploading project artifact at %s with checksum %s using uploadId: %s and size %s kB`,
             fileName,
             sha256,
             resp.uploadId,
@@ -133,17 +133,25 @@ export async function uploadArtifactToS3(
         })
         getLogger().info(`CodeTransformation: Status from S3 Upload = ${response.status}`)
     } catch (e: any) {
-        const errorMessage = (e as Error).message
+        let errorMessage = `The upload failed due to: ${(e as Error).message}. For more information, see the [Amazon Q documentation](${CodeWhispererConstants.codeTransformTroubleshootUploadError})`
+        if (errorMessage.includes('Request has expired')) {
+            errorMessage = CodeWhispererConstants.errorUploadingWithExpiredUrl
+        } else if (errorMessage.includes('Failed to establish a socket connection')) {
+            errorMessage = CodeWhispererConstants.socketConnectionFailed
+        } else if (errorMessage.includes('self signed certificate in certificate chain')) {
+            errorMessage = CodeWhispererConstants.selfSignedCertificateError
+        }
         getLogger().error(`CodeTransformation: UploadZip error = ${e}`)
         telemetry.codeTransform_logApiError.emit({
             codeTransformApiNames: 'UploadZip',
             codeTransformSessionId: CodeTransformTelemetryState.instance.getSessionId(),
             codeTransformApiErrorMessage: errorMessage,
             codeTransformRequestId: e.requestId ?? '',
+            codeTransformTotalByteSize: (await fs.promises.stat(fileName)).size,
             result: MetadataResult.Fail,
             reason: 'UploadToS3Failed',
         })
-        throw new Error('Upload PUT request failed')
+        throw new Error(errorMessage)
     }
 }
 
@@ -167,7 +175,7 @@ export async function resumeTransformationJob(jobId: string, userActionStatus: T
             return response.transformationStatus
         }
     } catch (e: any) {
-        const errorMessage = (e as Error).message
+        const errorMessage = `Resuming the job failed due to: ${(e as Error).message}`
         getLogger().error(`CodeTransformation: ResumeTransformation error = ${errorMessage}`)
         telemetry.codeTransform_logApiError.emit({
             codeTransformApiNames: 'ResumeTransformation',
@@ -178,16 +186,12 @@ export async function resumeTransformationJob(jobId: string, userActionStatus: T
             result: MetadataResult.Fail,
             reason: 'ResumeTransformationFailed',
         })
-        throw new Error('Resume transformation job failed')
+        throw new Error(errorMessage)
     }
 }
 
 export async function stopJob(jobId: string) {
     if (!jobId) {
-        throw new Error('Job ID is empty')
-    }
-
-    if (transformByQState.isNotStarted()) {
         return
     }
 
@@ -252,8 +256,8 @@ export async function uploadPayload(payloadFileName: string, uploadContext?: Upl
             result: MetadataResult.Pass,
         })
     } catch (e: any) {
-        const errorMessage = (e as Error).message
-        getLogger().error(`CodeTransformation: CreateUploadUrl error: = ${errorMessage}`)
+        const errorMessage = `The upload failed due to: ${(e as Error).message}`
+        getLogger().error(`CodeTransformation: CreateUploadUrl error: = ${e}`)
         telemetry.codeTransform_logApiError.emit({
             codeTransformApiNames: 'CreateUploadUrl',
             codeTransformSessionId: CodeTransformTelemetryState.instance.getSessionId(),
@@ -262,20 +266,21 @@ export async function uploadPayload(payloadFileName: string, uploadContext?: Upl
             result: MetadataResult.Fail,
             reason: 'CreateUploadUrlFailed',
         })
-        throw new Error('Create upload URL failed')
+        throw new Error(errorMessage)
     }
     try {
         await uploadArtifactToS3(payloadFileName, response, sha256, buffer)
     } catch (e: any) {
         const errorMessage = (e as Error).message
         getLogger().error(`CodeTransformation: UploadArtifactToS3 error: = ${errorMessage}`)
-        throw new Error('S3 upload failed')
+        throw new Error(errorMessage)
     }
     // UploadContext only exists for subsequent uploads, and they will return a uploadId that is NOT
     // the jobId. Only the initial call will uploadId be the jobId
     if (!uploadContext) {
         transformByQState.setJobId(encodeHTML(response.uploadId))
     }
+    jobPlanProgress['uploadCode'] = StepProgress.Succeeded
     updateJobHistory()
     return response.uploadId
 }
@@ -298,7 +303,7 @@ const mavenExcludedExtensions = ['.repositories', '.sha1']
  * @returns {boolean} Returns true if the path ends with an extension associated with Maven metadata files; otherwise, false.
  */
 function isExcludedDependencyFile(path: string): boolean {
-    return mavenExcludedExtensions.some(extension => path.endsWith(extension))
+    return mavenExcludedExtensions.some((extension) => path.endsWith(extension))
 }
 
 /**
@@ -314,7 +319,7 @@ function isExcludedDependencyFile(path: string): boolean {
  */
 function getFilesRecursively(dir: string, isDependenciesFolder: boolean): string[] {
     const entries = fs.readdirSync(dir, { withFileTypes: true })
-    const files = entries.flatMap(entry => {
+    const files = entries.flatMap((entry) => {
         const res = path.resolve(dir, entry.name)
         // exclude 'target' directory from ZIP (except if zipping dependencies) due to issues in backend
         if (entry.isDirectory()) {
@@ -357,11 +362,14 @@ export async function zipCode({ dependenciesFolder, humanInTheLoopFlag, modulePa
         // NOTE: We only upload dependencies for human in the loop work
         if (modulePath) {
             const sourceFiles = getFilesRecursively(modulePath, false)
+            let sourceFilesSize = 0
             for (const file of sourceFiles) {
                 const relativePath = path.relative(modulePath, file)
                 const paddedPath = path.join('sources', relativePath)
                 zip.addLocalFile(file, path.dirname(paddedPath))
+                sourceFilesSize += (await fs.promises.stat(file)).size
             }
+            getLogger().info(`CodeTransformation: source code files size = ${sourceFilesSize}`)
         }
 
         throwIfCancelled()
@@ -372,6 +380,7 @@ export async function zipCode({ dependenciesFolder, humanInTheLoopFlag, modulePa
         }
 
         if (dependencyFiles.length > 0) {
+            let dependencyFilesSize = 0
             for (const file of dependencyFiles) {
                 if (isExcludedDependencyFile(file)) {
                     continue
@@ -380,7 +389,9 @@ export async function zipCode({ dependenciesFolder, humanInTheLoopFlag, modulePa
                 // const paddedPath = path.join(`dependencies/${dependenciesFolder.name}`, relativePath)
                 const paddedPath = path.join(`dependencies/`, relativePath)
                 zip.addLocalFile(file, path.dirname(paddedPath))
+                dependencyFilesSize += (await fs.promises.stat(file)).size
             }
+            getLogger().info(`CodeTransformation: dependency files size = ${dependencyFilesSize}`)
             telemetry.codeTransform_dependenciesCopied.emit({
                 codeTransformSessionId: CodeTransformTelemetryState.instance.getSessionId(),
                 result: MetadataResult.Pass,
@@ -434,6 +445,8 @@ export async function zipCode({ dependenciesFolder, humanInTheLoopFlag, modulePa
         result: exceedsLimit ? MetadataResult.Fail : MetadataResult.Pass,
     })
 
+    getLogger().info(`CodeTransformation: created ZIP of size ${zipSize} at ${tempFilePath}`)
+
     if (exceedsLimit) {
         void vscode.window.showErrorMessage(CodeWhispererConstants.projectSizeTooLargeNotification)
         transformByQState.getChatControllers()?.transformationFinished.fire({
@@ -442,7 +455,6 @@ export async function zipCode({ dependenciesFolder, humanInTheLoopFlag, modulePa
         })
         throw new ZipExceedsSizeLimitError()
     }
-
     return tempFilePath
 }
 
@@ -475,7 +487,7 @@ export async function startJob(uploadId: string) {
         })
         return response.transformationJobId
     } catch (e: any) {
-        const errorMessage = (e as Error).message
+        const errorMessage = `Starting the job failed due to: ${(e as Error).message}`
         getLogger().error(`CodeTransformation: StartTransformation error = ${errorMessage}`)
         telemetry.codeTransform_logApiError.emit({
             codeTransformApiNames: 'StartTransformation',
@@ -485,7 +497,7 @@ export async function startJob(uploadId: string) {
             result: MetadataResult.Fail,
             reason: 'StartTransformationFailed',
         })
-        throw new Error(`Start job failed: ${errorMessage}`)
+        throw new Error(errorMessage)
     }
 }
 
@@ -568,7 +580,7 @@ export function addTableMarkdown(plan: string, stepId: string, tableMapping: { [
 
 export function getTableMapping(stepZeroProgressUpdates: ProgressUpdates) {
     const map: { [key: string]: string } = {}
-    stepZeroProgressUpdates.forEach(update => {
+    stepZeroProgressUpdates.forEach((update) => {
         // description should never be undefined since even if no data we show an empty table
         // but just in case, empty string allows us to skip this table without errors when rendering
         map[update.name] = update.description ?? ''
@@ -632,7 +644,7 @@ export async function getTransformationPlan(jobId: string) {
             CodeWhispererConstants.planIntroductionMessage
         }</p></div>${getJobStatisticsHtml(jobStatistics)}</div>`
         plan += `<div style="margin-top: 32px; border: 1px solid #424750; border-radius: 8px; padding: 10px;"><p style="font-size: 18px; margin-bottom: 4px;"><b>${CodeWhispererConstants.planHeaderMessage}</b></p><i>${CodeWhispererConstants.planDisclaimerMessage} <a href="https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/code-transformation.html">Read more.</a></i><br><br>`
-        response.transformationPlan.transformationSteps.slice(1).forEach(step => {
+        response.transformationPlan.transformationSteps.slice(1).forEach((step) => {
             plan += `<div style="border: 1px solid #424750; border-radius: 8px; padding: 20px;"><div style="display:flex; justify-content:space-between; align-items:center;"><p style="font-size: 16px; margin-bottom: 4px;">${step.name}</p><a href="#top">Scroll to top <img src="${arrowIcon}" style="vertical-align: middle"></a></div><p>${step.description}</p>`
             plan = addTableMarkdown(plan, step.id, tableMapping)
             plan += `</div><br>`
@@ -720,10 +732,6 @@ export async function pollTransformationJob(jobId: string, validStates: string[]
                 result: MetadataResult.Pass,
             })
             status = response.transformationJob.status!
-            // must be series of ifs, not else ifs
-            if (CodeWhispererConstants.validStatesForJobStarted.includes(status)) {
-                jobPlanProgress['startJob'] = StepProgress.Succeeded
-            }
             if (CodeWhispererConstants.validStatesForBuildSucceeded.includes(status)) {
                 jobPlanProgress['buildCode'] = StepProgress.Succeeded
             }
@@ -741,8 +749,12 @@ export async function pollTransformationJob(jobId: string, validStates: string[]
 
             const errorMessage = response.transformationJob.reason
             if (errorMessage !== undefined) {
-                transformByQState.setJobFailureErrorChatMessage(errorMessage)
-                transformByQState.setJobFailureErrorNotification(errorMessage)
+                transformByQState.setJobFailureErrorChatMessage(
+                    `${CodeWhispererConstants.failedToCompleteJobGenericChatMessage} ${errorMessage}`
+                )
+                transformByQState.setJobFailureErrorNotification(
+                    `${CodeWhispererConstants.failedToCompleteJobGenericNotification} ${errorMessage}`
+                )
                 transformByQState.setJobFailureMetadata(` (request ID: ${response.$response.requestId})`)
             }
             if (validStates.includes(status)) {
@@ -761,9 +773,7 @@ export async function pollTransformationJob(jobId: string, validStates: string[]
              * is called, we break above on validStatesForCheckingDownloadUrl and check final status in finalizeTransformationJob
              */
             if (CodeWhispererConstants.failureStates.includes(status)) {
-                transformByQState.setJobFailureMetadata(
-                    `${response.transformationJob.reason} (request ID: ${response.$response.requestId})`
-                )
+                transformByQState.setJobFailureMetadata(` (request ID: ${response.$response.requestId})`)
                 throw new JobStoppedError(response.$response.requestId)
             }
             await sleep(CodeWhispererConstants.transformationJobPollingIntervalSeconds * 1000)
@@ -784,7 +794,7 @@ export async function pollTransformationJob(jobId: string, validStates: string[]
                 result: MetadataResult.Fail,
                 reason: 'GetTransformationFailed',
             })
-            throw new Error('Error while polling job status')
+            throw e
         }
     }
     return status
@@ -822,36 +832,26 @@ export function findDownloadArtifactStep(transformationSteps: TransformationStep
     }
 }
 
-interface IDownloadResultArchiveParams {
-    jobId: string
-    downloadArtifactId: string
-    pathToArchive: string
-}
-export async function downloadResultArchive({
-    jobId,
-    downloadArtifactId,
-    pathToArchive,
-}: IDownloadResultArchiveParams) {
+export async function downloadResultArchive(
+    jobId: string,
+    downloadArtifactId: string | undefined,
+    pathToArchive: string,
+    downloadArtifactType: TransformationDownloadArtifactType
+) {
     let downloadErrorMessage = undefined
     const cwStreamingClient = await createCodeWhispererChatStreamingClient()
+
     try {
         await downloadExportResultArchive(
             cwStreamingClient,
             {
                 exportId: jobId,
                 exportIntent: ExportIntent.TRANSFORMATION,
-                exportContext: {
-                    transformationExportContext: {
-                        downloadArtifactId,
-                        downloadArtifactType: TransformationDownloadArtifactType.CLIENT_INSTRUCTIONS,
-                    },
-                },
             },
             pathToArchive
         )
     } catch (e: any) {
         downloadErrorMessage = (e as Error).message
-        // This allows the customer to retry the download
         getLogger().error(`CodeTransformation: ExportResultArchive error = ${downloadErrorMessage}`)
         telemetry.codeTransform_logApiError.emit({
             codeTransformApiNames: 'ExportResultArchive',
@@ -862,29 +862,45 @@ export async function downloadResultArchive({
             result: MetadataResult.Fail,
             reason: 'ExportResultArchiveFailed',
         })
+        throw e
     } finally {
         cwStreamingClient.destroy()
     }
 }
 
-export async function downloadHilResultArchive(jobId: string, downloadArtifactId: string, pathToArchiveDir: string) {
-    const archivePathExists = await fsCommon.existsDir(pathToArchiveDir)
+export async function downloadAndExtractResultArchive(
+    jobId: string,
+    downloadArtifactId: string | undefined,
+    pathToArchiveDir: string,
+    downloadArtifactType: TransformationDownloadArtifactType
+) {
+    const archivePathExists = await fs2.existsDir(pathToArchiveDir)
     if (!archivePathExists) {
-        await fsCommon.mkdir(pathToArchiveDir)
+        await fs2.mkdir(pathToArchiveDir)
     }
+
     const pathToArchive = path.join(pathToArchiveDir, 'ExportResultsArchive.zip')
-    await downloadResultArchive({ jobId, downloadArtifactId, pathToArchive })
 
     let downloadErrorMessage = undefined
     try {
         // Download and deserialize the zip
+        await downloadResultArchive(jobId, downloadArtifactId, pathToArchive, downloadArtifactType)
         const zip = new AdmZip(pathToArchive)
         zip.extractAllTo(pathToArchiveDir)
     } catch (e) {
         downloadErrorMessage = (e as Error).message
         getLogger().error(`CodeTransformation: ExportResultArchive error = ${downloadErrorMessage}`)
-        throw new Error('Error downloading HIL artifacts')
+        throw new Error('Error downloading transformation result artifacts: ' + downloadErrorMessage)
     }
+}
+
+export async function downloadHilResultArchive(jobId: string, downloadArtifactId: string, pathToArchiveDir: string) {
+    await downloadAndExtractResultArchive(
+        jobId,
+        downloadArtifactId,
+        pathToArchiveDir,
+        TransformationDownloadArtifactType.CLIENT_INSTRUCTIONS
+    )
 
     // manifest.json
     // pomFolder/pom.xml or manifest has pomFolderName path

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import * as child_process from 'child_process'
+import * as proc from 'child_process'
 import { pushIf } from '../../utilities/collectionUtils'
 import * as nls from 'vscode-nls'
 import { fileExists } from '../../filesystemUtilities'
@@ -30,7 +30,7 @@ export const waitForDebuggerMessages = {
 export interface SamLocalInvokeCommandArgs {
     command: string
     args: string[]
-    options?: child_process.SpawnOptions
+    options?: proc.SpawnOptions
     /** Wait until strings specified in `debuggerAttachCues` appear in the process output.  */
     waitForCues: boolean
     timeout?: Timeout
@@ -86,7 +86,7 @@ export class DefaultSamLocalInvokeCommand implements SamLocalInvokeCommand {
                         this.logger.verbose('SAM: pid %d: stderr: %s', childProcess.pid(), removeAnsi(text))
                         if (checkForCues) {
                             // Look for messages like "Debugger attached" before returning back to caller
-                            if (this.debuggerAttachCues.some(cue => text.includes(cue))) {
+                            if (this.debuggerAttachCues.some((cue) => text.includes(cue))) {
                                 this.logger.verbose(
                                     `SAM: pid ${childProcess.pid()}: local SAM app is ready for debugger to attach`
                                 )
@@ -96,7 +96,7 @@ export class DefaultSamLocalInvokeCommand implements SamLocalInvokeCommand {
                         }
                     },
                 })
-                .catch(error => {
+                .catch((error) => {
                     getLogger('channel').error(
                         localize('AWS.samcli.error', 'Error running command "{0}": {1}', samCommandName, error.message)
                     )
@@ -139,7 +139,7 @@ export class DefaultSamLocalInvokeCommand implements SamLocalInvokeCommand {
                     getLogger().debug('forcing disconnect of debugger session "%s"', debugSession.name)
                     debugSession.customRequest('disconnect').then(
                         () => undefined,
-                        e =>
+                        (e) =>
                             getLogger().warn(
                                 'failed to disconnect debugger session "%s": %s',
                                 debugSession.name,

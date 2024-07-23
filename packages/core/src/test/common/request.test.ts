@@ -9,11 +9,6 @@ import crossFetch from 'cross-fetch'
 import request, { RequestCancelledError, RequestError } from '../../common/request'
 import globals from '../../shared/extensionGlobals'
 
-// Returns a stubbed fetch for other tests.
-export function getFetchStubWithResponse(response: Partial<Response>) {
-    return stub(request, 'fetch').returns({ response: new Promise((res, _) => res(response)) } as any)
-}
-
 describe('fetch()', function () {
     /** We built a wrapper around an actual fetch implementation, this is a fake stub of it for testing. */
     let wrappedFetch: SinonStub<Parameters<typeof crossFetch>, Promise<Response>>
@@ -79,7 +74,7 @@ describe('fetch()', function () {
         // The response and the wrapped fetch request pushed to the microtask queue.
         await assert.rejects(
             () => req.response,
-            e => {
+            (e) => {
                 return e instanceof RequestCancelledError
             }
         )

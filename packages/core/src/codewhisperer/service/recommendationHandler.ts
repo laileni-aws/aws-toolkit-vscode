@@ -99,7 +99,7 @@ export class RecommendationHandler {
     }
 
     isValidResponse(): boolean {
-        return session.recommendations.some(r => r.content.trim() !== '')
+        return session.recommendations.some((r) => r.content.trim() !== '')
     }
 
     async getServerResponse(
@@ -275,7 +275,7 @@ export class RecommendationHandler {
                     getLogger().error('amazonq inline-suggest: AccessDeniedException : %s', (error as Error).message)
                     void vscode.window
                         .showErrorMessage(`CodeWhisperer: ${error?.message}`, CodeWhispererConstants.settingsLearnMore)
-                        .then(async resp => {
+                        .then(async (resp) => {
                             if (resp === CodeWhispererConstants.settingsLearnMore) {
                                 void openUrl(vscode.Uri.parse(CodeWhispererConstants.learnMoreUri))
                             }
@@ -412,7 +412,7 @@ export class RecommendationHandler {
     }
 
     hasAtLeastOneValidSuggestion(typedPrefix: string): boolean {
-        return session.recommendations.some(r => r.content.trim() !== '' && r.content.startsWith(typedPrefix))
+        return session.recommendations.some((r) => r.content.trim() !== '' && r.content.startsWith(typedPrefix))
     }
 
     cancelPaginatedRequest() {
@@ -493,7 +493,7 @@ export class RecommendationHandler {
         if (isCloud9('any')) {
             this.clearRecommendations()
         } else if (isInlineCompletionEnabled()) {
-            this.clearInlineCompletionStates().catch(e => {
+            this.clearInlineCompletionStates().catch((e) => {
                 getLogger().error('clearInlineCompletionStates failed: %s', (e as Error).message)
             })
         }
@@ -633,12 +633,14 @@ export class RecommendationHandler {
     }
 
     async onCursorChange(e: vscode.TextEditorSelectionChangeEvent) {
-        // e.kind will be 1 for keyboard cursor change events
         // we do not want to reset the states for keyboard events because they can be typeahead
-        if (e.kind !== 1 && vscode.window.activeTextEditor === e.textEditor) {
+        if (
+            e.kind !== vscode.TextEditorSelectionChangeKind.Keyboard &&
+            vscode.window.activeTextEditor === e.textEditor
+        ) {
             application()._clearCodeWhispererUIListener.fire()
             // when cursor change due to mouse movement we need to reset the active item index for inline
-            if (e.kind === 2) {
+            if (e.kind === vscode.TextEditorSelectionChangeKind.Mouse) {
                 this.inlineCompletionProvider?.clearActiveItemIndex()
             }
         }

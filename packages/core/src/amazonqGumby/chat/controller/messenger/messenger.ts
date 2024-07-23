@@ -8,9 +8,9 @@
  * As much as possible, all strings used in the experience should originate here.
  */
 
-import { AuthFollowUpType, expiredText, enableQText, reauthenticateText } from '../../../../amazonq/auth/model'
+import { AuthFollowUpType, AuthMessageDataMap } from '../../../../amazonq/auth/model'
 import { ChatItemType } from '../../../../amazonqFeatureDev/models'
-import { JDKVersion, TransformationCandidateProject } from '../../../../codewhisperer/models/model'
+import { JDKVersion, TransformationCandidateProject, transformByQState } from '../../../../codewhisperer/models/model'
 import { FeatureAuthState } from '../../../../codewhisperer/util/authUtil'
 import * as CodeWhispererConstants from '../../../../codewhisperer/models/constants'
 import {
@@ -52,6 +52,7 @@ export enum GumbyNamedMessages {
     COMPILATION_PROGRESS_MESSAGE = 'gumbyProjectCompilationMessage',
     JOB_SUBMISSION_STATUS_MESSAGE = 'gumbyJobSubmissionMessage',
     JOB_SUBMISSION_WITH_DEPENDENCY_STATUS_MESSAGE = 'gumbyJobSubmissionWithDependencyMessage',
+    JOB_FAILED_IN_PRE_BUILD = 'gumbyJobFailedInPreBuildMessage',
 }
 
 export class Messenger {
@@ -86,20 +87,21 @@ export class Messenger {
 
     public async sendAuthNeededExceptionMessage(credentialState: FeatureAuthState, tabID: string) {
         let authType: AuthFollowUpType = 'full-auth'
-        let message = reauthenticateText
-        if (credentialState.amazonQ === 'disconnected') {
-            authType = 'full-auth'
-            message = reauthenticateText
-        }
+        let message = AuthMessageDataMap[authType].message
 
-        if (credentialState.amazonQ === 'unsupported') {
-            authType = 'use-supported-auth'
-            message = enableQText
-        }
-
-        if (credentialState.amazonQ === 'expired') {
-            authType = 're-auth'
-            message = expiredText
+        switch (credentialState.amazonQ) {
+            case 'disconnected':
+                authType = 'full-auth'
+                message = AuthMessageDataMap[authType].message
+                break
+            case 'unsupported':
+                authType = 'use-supported-auth'
+                message = AuthMessageDataMap[authType].message
+                break
+            case 'expired':
+                authType = 're-auth'
+                message = AuthMessageDataMap[authType].message
+                break
         }
 
         this.dispatcher.sendAuthNeededExceptionMessage(new AuthNeededException(message, authType, tabID))
@@ -113,7 +115,7 @@ export class Messenger {
         const projectFormOptions: { value: any; label: string }[] = []
         const detectedJavaVersions = new Array<JDKVersion | undefined>()
 
-        projects.forEach(candidateProject => {
+        projects.forEach((candidateProject) => {
             projectFormOptions.push({
                 value: candidateProject.path,
                 label: candidateProject.name,
@@ -327,12 +329,6 @@ export class Messenger {
             case 'unsupported-source-jdk-version':
                 message = CodeWhispererConstants.unsupportedJavaVersionChatMessage
                 break
-            case 'upload-to-s3-failed':
-                message = `I was not able to upload your module to be transformed. Please try again later.`
-                break
-            case 'job-start-failed':
-                message = CodeWhispererConstants.failedToStartJobTooManyJobsChatMessage
-                break
         }
 
         const buttons: ChatItemButton[] = []
@@ -384,11 +380,7 @@ export class Messenger {
         this.dispatcher.sendCommandMessage(new SendCommandMessage(message.command, message.tabID, message.eventId))
     }
 
-    public sendJobFinishedMessage(tabID: string, message: string = '') {
-        if (message === '') {
-            message = CodeWhispererConstants.jobCancelledChatMessage
-        }
-
+    public sendJobFinishedMessage(tabID: string, message: string) {
         const buttons: ChatItemButton[] = []
         buttons.push({
             keepCardAfterClick: false,
@@ -453,7 +445,7 @@ export class Messenger {
         )
 
         if (codeSnippet !== '') {
-            message = `Here is the dependency causing the issue: 
+            message = `Here is the dependency causing the issue:
 \`\`\`
 ${codeSnippet}
 \`\`\`
@@ -501,7 +493,7 @@ ${codeSnippet}
 
         const valueFormOptions: { value: any; label: string }[] = []
 
-        versions.allVersions.forEach(version => {
+        versions.allVersions.forEach((version) => {
             valueFormOptions.push({
                 value: version,
                 label: version,
@@ -558,6 +550,32 @@ ${codeSnippet}
             false,
             message,
             GumbyNamedMessages.JOB_SUBMISSION_WITH_DEPENDENCY_STATUS_MESSAGE
+        )
+    }
+
+    public sendViewBuildLog(tabID: string) {
+        const message = `I am having trouble building your project in the secure build environment and could not complete the transformation.`
+        const messageId = GumbyNamedMessages.JOB_FAILED_IN_PRE_BUILD
+        const buttons: ChatItemButton[] = []
+
+        if (transformByQState.getPreBuildLogFilePath() !== '') {
+            buttons.push({
+                keepCardAfterClick: true,
+                text: `View Build Log`,
+                id: ButtonActions.OPEN_BUILD_LOG,
+            })
+        }
+
+        this.dispatcher.sendChatMessage(
+            new ChatMessage(
+                {
+                    message,
+                    messageType: 'ai-prompt',
+                    messageId,
+                    buttons,
+                },
+                tabID
+            )
         )
     }
 }

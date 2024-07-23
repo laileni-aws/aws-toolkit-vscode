@@ -38,9 +38,15 @@ export interface ConnectorProps {
     onAsyncEventProgress: (tabID: string, inProgress: boolean, message: string | undefined) => void
     onQuickHandlerCommand: (tabID: string, command?: string, eventId?: string) => void
     onCWCContextCommandMessage: (message: ChatItem, command?: string) => string | undefined
+    onOpenSettingsMessage: (tabID: string) => void
     onError: (tabID: string, message: string, title: string) => void
     onWarning: (tabID: string, message: string, title: string) => void
-    onFileComponentUpdate: (tabID: string, filePaths: DiffTreeFileInfo[], deletedFiles: DiffTreeFileInfo[]) => void
+    onFileComponentUpdate: (
+        tabID: string,
+        filePaths: DiffTreeFileInfo[],
+        deletedFiles: DiffTreeFileInfo[],
+        messageId: string
+    ) => void
     onUpdatePlaceholder: (tabID: string, newPlaceholder: string) => void
     onChatInputEnabled: (tabID: string, enabled: boolean) => void
     onUpdateAuthentication: (featureDevEnabled: boolean, authenticatingTabIDs: string[]) => void
@@ -400,6 +406,14 @@ export class Connector {
             case 'gumby':
                 this.gumbyChatConnector.onCustomFormAction(tabId, action)
                 break
+            case 'cwc':
+                if (action.id === `open-settings`) {
+                    this.sendMessageToExtension({
+                        command: 'open-settings',
+                        type: '',
+                        tabType: 'cwc',
+                    })
+                }
         }
     }
 }

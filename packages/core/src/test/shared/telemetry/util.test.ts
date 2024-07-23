@@ -9,6 +9,7 @@ import { Settings } from '../../../shared/settings'
 import { convertLegacy, getClientId, getUserAgent, platformPair, TelemetryConfig } from '../../../shared/telemetry/util'
 import { extensionVersion } from '../../../shared/vscode/env'
 import { FakeMemento } from '../../fakeExtensionContext'
+import { GlobalState } from '../../../shared/globalState'
 
 describe('TelemetryConfig', function () {
     const settingKey = 'aws.telemetry'
@@ -72,7 +73,7 @@ describe('TelemetryConfig', function () {
     ]
 
     describe('isTelemetryEnabled', function () {
-        scenarios.forEach(scenario => {
+        scenarios.forEach((scenario) => {
             it(scenario.desc, async () => {
                 await settings.update(settingKey, scenario.initialSettingValue)
 
@@ -82,7 +83,7 @@ describe('TelemetryConfig', function () {
     })
 
     describe('sanitizeTelemetrySetting', function () {
-        scenarios.forEach(scenario => {
+        scenarios.forEach((scenario) => {
             it(scenario.desc, () => {
                 const tryConvert = () => {
                     try {
@@ -100,27 +101,20 @@ describe('TelemetryConfig', function () {
 
 describe('getClientId', function () {
     it('should generate a unique id', async function () {
-        const c1 = await getClientId(new FakeMemento(), true, false)
-        const c2 = await getClientId(new FakeMemento(), true, false)
+        const c1 = getClientId(new GlobalState(new FakeMemento()), true, false, 'x1')
+        const c2 = getClientId(new GlobalState(new FakeMemento()), true, false, 'x2')
         assert.notStrictEqual(c1, c2)
     })
 
-    it('returns the same value across the calls', async function () {
-        const memento = new FakeMemento()
-        const c1 = getClientId(memento, true, false)
-        const c2 = getClientId(memento, true, false)
-        assert.strictEqual(await c1, await c2, 'Expected client ids to be same')
-    })
-
     it('returns the same value across the calls sequentially', async function () {
-        const memento = new FakeMemento()
-        const c1 = await getClientId(memento, true, false)
-        const c2 = await getClientId(memento, true, false)
+        const memento = new GlobalState(new FakeMemento())
+        const c1 = getClientId(memento, true, false, 'y1')
+        const c2 = getClientId(memento, true, false, 'y2')
         assert.strictEqual(c1, c2)
     })
 
-    it('returns the nil UUID if it fails to save generated UUID', async function () {
-        const mememto: Memento = {
+    it('returns nil UUID if it fails to save generated UUID', async function () {
+        const memento: Memento = {
             keys: () => [],
             get(key) {
                 return undefined
@@ -129,66 +123,72 @@ describe('getClientId', function () {
                 throw new Error()
             },
         }
-        const clientId = await getClientId(mememto, true, false)
-        assert.strictEqual(clientId, '00000000-0000-0000-0000-000000000000')
+        const clientId = getClientId(new GlobalState(memento), true, false, 'x3')
+        // XXX: `notStrictEqual` since getClientId() is now synchronous. Because memento.update() is async.
+        assert.notStrictEqual(clientId, '00000000-0000-0000-0000-000000000000')
     })
 
-    it('returns the nil UUID if fails to retrive a saved UUID.', async function () {
-        const mememto: Memento = {
+    it('returns the nil UUID if it fails to get the saved UUID', async function () {
+        const memento: Memento = {
             keys: () => [],
             get(key) {
                 throw new Error()
             },
             async update(key, value) {},
         }
-        const clientId = await getClientId(mememto, true, false)
+        class FakeGlobalState extends GlobalState {
+            override tryGet<T>(key: any, defaultVal?: T): T | undefined {
+                return this.memento.get(key)
+            }
+        }
+        const clientId = getClientId(new FakeGlobalState(memento), true, false, 'x4')
         assert.strictEqual(clientId, '00000000-0000-0000-0000-000000000000')
     })
 
     it('should be ffffffff-ffff-ffff-ffff-ffffffffffff if in test enviroment', async function () {
-        const clientId = await getClientId(new FakeMemento(), true)
+        const clientId = getClientId(new GlobalState(new FakeMemento()), true)
         assert.strictEqual(clientId, 'ffffffff-ffff-ffff-ffff-ffffffffffff')
     })
 
     it('should be ffffffff-ffff-ffff-ffff-ffffffffffff if telemetry is not enabled in test enviroment', async function () {
-        const clientId = await getClientId(new FakeMemento(), false)
+        const clientId = getClientId(new GlobalState(new FakeMemento()), false)
         assert.strictEqual(clientId, 'ffffffff-ffff-ffff-ffff-ffffffffffff')
     })
 
     it('should be 11111111-1111-1111-1111-111111111111 if telemetry is not enabled', async function () {
-        const clientId = await getClientId(new FakeMemento(), false, false)
+        const clientId = getClientId(new GlobalState(new FakeMemento()), false, false)
         assert.strictEqual(clientId, '11111111-1111-1111-1111-111111111111')
     })
 })
 
 describe('getUserAgent', function () {
     it('includes product name and version', async function () {
-        const userAgent = await getUserAgent()
+        const userAgent = getUserAgent()
         const lastPair = userAgent.split(' ')[0]
         assert.ok(lastPair?.startsWith(`AWS-Toolkit-For-VSCode/${extensionVersion}`))
     })
 
     it('includes only one pair by default', async function () {
-        const userAgent = await getUserAgent()
+        const userAgent = getUserAgent()
         const pairs = userAgent.split(' ')
         assert.strictEqual(pairs.length, 1)
     })
 
     it('omits `ClientId` by default', async function () {
-        const userAgent = await getUserAgent()
+        const userAgent = getUserAgent()
         assert.ok(!userAgent.includes('ClientId'))
     })
 
     it('includes `ClientId` at the end if opted in', async function () {
-        const userAgent = await getUserAgent({ includeClientId: true })
+        const userAgent = getUserAgent({ includeClientId: true })
         const lastPair = userAgent.split(' ').pop()
         assert.ok(lastPair?.startsWith('ClientId/'))
     })
 
     it('includes the platform before `ClientId` if opted in', async function () {
-        const userAgent = await getUserAgent({ includePlatform: true, includeClientId: true })
+        const userAgent = getUserAgent({ includePlatform: true, includeClientId: true })
         const pairs = userAgent.split(' ')
-        const clientPairIndex = pairs.findIndex(pair => pair.startsWith('ClientId/'))
+        const clientPairIndex = pairs.findIndex((pair) => pair.startsWith('ClientId/'))
         const beforeClient = pairs[clientPairIndex - 1]
         assert.strictEqual(beforeClient, platformPair())
     })

@@ -14,17 +14,25 @@ import { featureDevScheme } from '../../constants'
 import {
     CodeIterationLimitError,
     ContentLengthError,
+    FeatureDevServiceError,
     MonthlyConversationLimitError,
     PlanIterationLimitError,
+    PrepareRepoFailedError,
+    PromptRefusalException,
     SelectedFolderNotInWorkspaceFolderError,
+    TabIdNotFoundError,
+    UploadCodeError,
+    UserMessageNotFoundError,
     WorkspaceFolderNotFoundError,
+    ZipFileError,
     createUserFacingErrorMessage,
+    denyListedErrors,
 } from '../../errors'
 import { defaultRetryLimit } from '../../limits'
 import { Session } from '../../session/session'
 import { featureName } from '../../constants'
 import { ChatSessionStorage } from '../../storages/chatSession'
-import { FollowUpTypes, SessionStatePhase } from '../../types'
+import { DevPhase, FollowUpTypes, SessionStatePhase } from '../../types'
 import { Messenger } from './messenger/messenger'
 import { AuthUtil } from '../../../codewhisperer/util/authUtil'
 import { AuthController } from '../../../amazonq/auth/controller'
@@ -34,8 +42,17 @@ import { placeholder } from '../../../shared/vscode/commands2'
 import { EditorContentController } from '../../../amazonq/commons/controllers/contentController'
 import { openUrl } from '../../../shared/utilities/vsCodeUtils'
 import { getPathsFromZipFilePath } from '../../util/files'
-import { examples, newTaskChanges, approachCreation, sessionClosed, updateCode } from '../../userFacingText'
+import {
+    examples,
+    newTaskChanges,
+    approachCreation,
+    sessionClosed,
+    updateCode,
+    logWithConversationId,
+    messageWithConversationId,
+} from '../../userFacingText'
 import { getWorkspaceFoldersByPrefixes } from '../../../shared/utilities/workspaceUtils'
+import { ErrorMessages } from './messenger/constants'
 
 export interface ChatControllerEventEmitters {
     readonly processHumanChatMessage: EventEmitter<any>
@@ -89,21 +106,21 @@ export class FeatureDevController {
          */
         this.isAmazonQVisible = true
 
-        onDidChangeAmazonQVisibility(visible => {
+        onDidChangeAmazonQVisibility((visible) => {
             this.isAmazonQVisible = visible
         })
 
-        this.chatControllerMessageListeners.processHumanChatMessage.event(data => {
-            this.processUserChatMessage(data).catch(e => {
+        this.chatControllerMessageListeners.processHumanChatMessage.event((data) => {
+            this.processUserChatMessage(data).catch((e) => {
                 getLogger().error('processUserChatMessage failed: %s', (e as Error).message)
             })
         })
-        this.chatControllerMessageListeners.processChatItemVotedMessage.event(data => {
-            this.processChatItemVotedMessage(data.tabID, data.messageId, data.vote).catch(e => {
+        this.chatControllerMessageListeners.processChatItemVotedMessage.event((data) => {
+            this.processChatItemVotedMessage(data.tabID, data.messageId, data.vote).catch((e) => {
                 getLogger().error('processChatItemVotedMessage failed: %s', (e as Error).message)
             })
         })
-        this.chatControllerMessageListeners.followUpClicked.event(data => {
+        this.chatControllerMessageListeners.followUpClicked.event((data) => {
             switch (data.followUp.type) {
                 case FollowUpTypes.GenerateCode:
                     return this.generateCodeClicked(data)
@@ -127,28 +144,28 @@ export class FeatureDevController {
                     break
             }
         })
-        this.chatControllerMessageListeners.openDiff.event(data => {
+        this.chatControllerMessageListeners.openDiff.event((data) => {
             return this.openDiff(data)
         })
-        this.chatControllerMessageListeners.stopResponse.event(data => {
+        this.chatControllerMessageListeners.stopResponse.event((data) => {
             return this.stopResponse(data)
         })
-        this.chatControllerMessageListeners.tabOpened.event(data => {
+        this.chatControllerMessageListeners.tabOpened.event((data) => {
             return this.tabOpened(data)
         })
-        this.chatControllerMessageListeners.tabClosed.event(data => {
+        this.chatControllerMessageListeners.tabClosed.event((data) => {
             this.tabClosed(data)
         })
-        this.chatControllerMessageListeners.authClicked.event(data => {
+        this.chatControllerMessageListeners.authClicked.event((data) => {
             this.authClicked(data)
         })
-        this.chatControllerMessageListeners.processResponseBodyLinkClick.event(data => {
+        this.chatControllerMessageListeners.processResponseBodyLinkClick.event((data) => {
             this.processLink(data)
         })
-        this.chatControllerMessageListeners.insertCodeAtPositionClicked.event(data => {
+        this.chatControllerMessageListeners.insertCodeAtPositionClicked.event((data) => {
             this.insertCodeAtPosition(data)
         })
-        this.chatControllerMessageListeners.fileClicked.event(async data => {
+        this.chatControllerMessageListeners.fileClicked.event(async (data) => {
             return await this.fileClicked(data)
         })
     }
@@ -157,7 +174,7 @@ export class FeatureDevController {
         const session = await this.sessionStorage.getSession(tabId)
 
         switch (session?.state.phase) {
-            case 'Approach':
+            case DevPhase.APPROACH:
                 if (vote === 'upvote') {
                     telemetry.amazonq_approachThumbsUp.emit({
                         amazonqConversationId: session?.conversationId,
@@ -174,20 +191,142 @@ export class FeatureDevController {
                     })
                 }
                 break
-            case 'Codegen':
+            case DevPhase.CODEGEN:
                 if (vote === 'upvote') {
                     telemetry.amazonq_codeGenerationThumbsUp.emit({
                         amazonqConversationId: session?.conversationId,
                         value: 1,
                         result: 'Succeeded',
+                        credentialStartUrl: AuthUtil.instance.startUrl,
                     })
                 } else if (vote === 'downvote') {
                     telemetry.amazonq_codeGenerationThumbsDown.emit({
                         amazonqConversationId: session?.conversationId,
                         value: 1,
                         result: 'Succeeded',
+                        credentialStartUrl: AuthUtil.instance.startUrl,
                     })
                 }
+                break
+        }
+    }
+
+    private processErrorChatMessage = (err: any, message: any, session: Session | undefined) => {
+        const errorMessage = createUserFacingErrorMessage(
+            `${featureName} request failed: ${err.cause?.message ?? err.message}`
+        )
+
+        let defaultMessage
+        const isDenyListedError = denyListedErrors.some((err) => errorMessage.includes(err))
+
+        switch (err.code) {
+            case ContentLengthError.errorName:
+                this.messenger.sendAnswer({
+                    type: 'answer',
+                    tabID: message.tabID,
+                    message: err.message + messageWithConversationId(session?.conversationIdUnsafe),
+                })
+                this.messenger.sendAnswer({
+                    type: 'system-prompt',
+                    tabID: message.tabID,
+                    followUps: [
+                        {
+                            pillText: 'Choose another folder in your workspace',
+                            type: 'ModifyDefaultSourceFolder',
+                            status: 'info',
+                        },
+                    ],
+                })
+                break
+            case MonthlyConversationLimitError.errorName:
+                this.messenger.sendMonthlyLimitError(message.tabID)
+                break
+
+            case PlanIterationLimitError.errorName:
+                this.messenger.sendAnswer({
+                    type: 'answer',
+                    tabID: message.tabID,
+                    message: err.message + messageWithConversationId(session?.conversationIdUnsafe),
+                })
+                this.messenger.sendAnswer({
+                    type: 'system-prompt',
+                    tabID: message.tabID,
+                    followUps: [
+                        {
+                            pillText: 'Discuss a new plan',
+                            type: FollowUpTypes.NewTask,
+                            status: 'info',
+                        },
+                        {
+                            pillText: 'Generate code',
+                            type: FollowUpTypes.GenerateCode,
+                            status: 'info',
+                        },
+                    ],
+                })
+                break
+
+            case FeatureDevServiceError.errorName:
+            case UploadCodeError.errorName:
+            case UserMessageNotFoundError.errorName:
+            case TabIdNotFoundError.errorName:
+            case PrepareRepoFailedError.errorName:
+                this.messenger.sendErrorMessage(
+                    errorMessage,
+                    message.tabID,
+                    this.retriesRemaining(session),
+                    session?.conversationIdUnsafe
+                )
+                break
+            case PromptRefusalException.errorName:
+            case ZipFileError.errorName:
+                this.messenger.sendErrorMessage(errorMessage, message.tabID, 0, session?.conversationIdUnsafe, true)
+                break
+            case CodeIterationLimitError.errorName:
+                this.messenger.sendAnswer({
+                    type: 'answer',
+                    tabID: message.tabID,
+                    message: err.message + messageWithConversationId(session?.conversationIdUnsafe),
+                })
+                this.messenger.sendAnswer({
+                    type: 'system-prompt',
+                    tabID: message.tabID,
+                    followUps: [
+                        {
+                            pillText: 'Insert code',
+                            type: FollowUpTypes.InsertCode,
+                            icon: 'ok' as MynahIcons,
+                            status: 'success',
+                        },
+                    ],
+                })
+                break
+            default:
+                switch (session?.state.phase) {
+                    case DevPhase.APPROACH:
+                        if (isDenyListedError) {
+                            defaultMessage = ErrorMessages.approachPhase.denyListedError
+                        } else {
+                            defaultMessage = ErrorMessages.approachPhase.default
+                        }
+                        break
+                    case DevPhase.CODEGEN:
+                        if (this.retriesRemaining(session) === 0) {
+                            defaultMessage = ErrorMessages.codeGen.denyListedError
+                        } else {
+                            defaultMessage = ErrorMessages.codeGen.default
+                        }
+                        break
+                }
+
+                this.messenger.sendErrorMessage(
+                    defaultMessage ? defaultMessage : errorMessage,
+                    message.tabID,
+                    this.retriesRemaining(session),
+                    session?.conversationIdUnsafe,
+                    !!defaultMessage
+                )
+
                 break
         }
     }
@@ -195,7 +334,7 @@ export class FeatureDevController {
     // TODO add type
     private async processUserChatMessage(message: any) {
         if (message.message === undefined) {
-            this.messenger.sendErrorMessage('chatMessage should be set', message.tabID, 0, undefined, undefined)
+            this.messenger.sendErrorMessage('chatMessage should be set', message.tabID, 0, undefined)
             return
         }
 
@@ -214,7 +353,6 @@ export class FeatureDevController {
             getLogger().debug(`${featureName}: Processing message: ${message.message}`)
 
             session = await this.sessionStorage.getSession(message.tabID)
-
             const authState = await AuthUtil.instance.getChatAuthState()
             if (authState.amazonQ !== 'connected') {
                 await this.messenger.sendAuthNeededExceptionMessage(authState, message.tabID)
@@ -223,93 +361,16 @@ export class FeatureDevController {
             }
 
             switch (session.state.phase) {
-                case 'Init':
-                case 'Approach':
+                case DevPhase.INIT:
+                case DevPhase.APPROACH:
                     await this.onApproachGeneration(session, message.message, message.tabID)
                     break
-                case 'Codegen':
+                case DevPhase.CODEGEN:
                     await this.onCodeGeneration(session, message.message, message.tabID)
                     break
             }
         } catch (err: any) {
-            if (err instanceof ContentLengthError) {
-                this.messenger.sendErrorMessage(
-                    err.message,
-                    message.tabID,
-                    this.retriesRemaining(session),
-                    undefined,
-                    session?.conversationIdUnsafe
-                )
-                this.messenger.sendAnswer({
-                    type: 'system-prompt',
-                    tabID: message.tabID,
-                    followUps: [
-                        {
-                            pillText: 'Select files for context',
-                            type: 'ModifyDefaultSourceFolder',
-                            status: 'info',
-                        },
-                    ],
-                })
-            } else if (err instanceof MonthlyConversationLimitError) {
-                this.messenger.sendMonthlyLimitError(message.tabID)
-            } else if (err instanceof PlanIterationLimitError) {
-                this.messenger.sendErrorMessage(
-                    err.message,
-                    message.tabID,
-                    this.retriesRemaining(session),
-                    undefined,
-                    session?.conversationIdUnsafe
-                )
-                this.messenger.sendAnswer({
-                    type: 'system-prompt',
-                    tabID: message.tabID,
-                    followUps: [
-                        {
-                            pillText: 'Discuss a new plan',
-                            type: FollowUpTypes.NewTask,
-                            status: 'info',
-                        },
-                        {
-                            pillText: 'Generate code',
-                            type: FollowUpTypes.GenerateCode,
-                            status: 'info',
-                        },
-                    ],
-                })
-            } else if (err instanceof CodeIterationLimitError) {
-                this.messenger.sendErrorMessage(
-                    err.message,
-                    message.tabID,
-                    this.retriesRemaining(session),
-                    undefined,
-                    session?.conversationIdUnsafe
-                )
-                this.messenger.sendAnswer({
-                    type: 'system-prompt',
-                    tabID: message.tabID,
-                    followUps: [
-                        {
-                            pillText: 'Insert code',
-                            type: FollowUpTypes.InsertCode,
-                            icon: 'ok' as MynahIcons,
-                            status: 'success',
-                        },
-                    ],
-                })
-            } else {
-                const errorMessage = createUserFacingErrorMessage(
-                    `${featureName} request failed: ${err.cause?.message ?? err.message}`
-                )
-                this.messenger.sendErrorMessage(
-                    errorMessage,
-                    message.tabID,
-                    this.retriesRemaining(session),
-                    session?.state.phase,
-                    session?.conversationIdUnsafe
-                )
-            }
-
+            this.processErrorChatMessage(err, message, session)
             // Lock the chat input until they explicitly click one of the follow ups
             this.messenger.sendChatInputEnabled(message.tabID, false)
         }
@@ -321,28 +382,27 @@ export class FeatureDevController {
     private async onApproachGeneration(session: Session, message: string, tabID: string) {
         await session.preloader(message)
 
-        getLogger().info(`${featureName} conversation id: ${session.conversationId}`)
+        getLogger().info(logWithConversationId(session.conversationId))
 
+        // This is a loading animation
         this.messenger.sendAnswer({
-            type: 'answer',
+            type: 'answer-stream',
             tabID,
             message: approachCreation,
         })
-
-        // Ensure that the loading icon stays showing
-        this.messenger.sendAsyncEventProgress(tabID, true, undefined)
 
         this.messenger.sendUpdatePlaceholder(tabID, 'Generating plan ...')
 
         const interactions = await session.send(message)
         this.messenger.sendUpdatePlaceholder(tabID, 'How can this plan be improved?')
 
-        // Resolve the "..." with the content
+        // This is were we get the plan fully and add it to the chat.
         this.messenger.sendAnswer({
             message: interactions.content,
-            type: 'answer-part',
+            type: 'answer',
             tabID: tabID,
             canBeVoted: true,
+            snapToTop: true,
         })
 
         if (interactions.responseType === 'VALID') {
@@ -368,7 +428,7 @@ export class FeatureDevController {
      * Handle a regular incoming message when a user is in the code generation phase
      */
     private async onCodeGeneration(session: Session, message: string, tabID: string) {
-        getLogger().info(`Q - Dev chat conversation id: ${session.conversationId}`)
+        getLogger().info(logWithConversationId(session.conversationId))
 
         // lock the UI/show loading bubbles
         this.messenger.sendAsyncEventProgress(
@@ -424,6 +484,18 @@ export class FeatureDevController {
                 tabID,
                 session.uploadId
             )
+
+            const remainingIterations = session.state.codeGenerationRemainingIterationCount
+            const totalIterations = session.state.codeGenerationTotalIterationCount
+
+            if (remainingIterations !== undefined && totalIterations !== undefined) {
+                this.messenger.sendAnswer({
+                    type: 'answer',
+                    tabID: tabID,
+                    message: `You have ${remainingIterations} out of ${totalIterations} code iterations remaining.`,
+                })
+            }
+
             this.messenger.sendAnswer({
                 message: undefined,
                 type: 'system-prompt',
@@ -467,7 +539,6 @@ export class FeatureDevController {
                 errorMessage,
                 message.tabID,
                 this.retriesRemaining(session),
-                session?.state.phase,
                 session?.conversationIdUnsafe
             )
         }
@@ -479,12 +550,13 @@ export class FeatureDevController {
         try {
             session = await this.sessionStorage.getSession(message.tabID)
 
-            const acceptedFiles = (paths?: { rejected: boolean }[]) => (paths || []).filter(i => !i.rejected).length
+            const acceptedFiles = (paths?: { rejected: boolean }[]) => (paths || []).filter((i) => !i.rejected).length
 
             const amazonqNumberOfFilesAccepted =
                 acceptedFiles(session.state.filePaths) + acceptedFiles(session.state.deletedFiles)
 
             telemetry.amazonq_isAcceptedCodeChanges.emit({
+                credentialStartUrl: AuthUtil.instance.startUrl,
                 amazonqConversationId: session.conversationId,
                 amazonqNumberOfFilesAccepted,
                 enabled: true,
@@ -523,7 +595,6 @@ export class FeatureDevController {
                 createUserFacingErrorMessage(`Failed to insert code changes: ${err.message}`),
                 message.tabID,
                 this.retriesRemaining(session),
-                session?.state.phase,
                 session?.conversationIdUnsafe
             )
         }
@@ -535,6 +606,7 @@ export class FeatureDevController {
             amazonqConversationId: session.conversationId,
             enabled: true,
             result: 'Succeeded',
+            credentialStartUrl: AuthUtil.instance.startUrl,
         })
         // Unblock the message button
         this.messenger.sendAsyncEventProgress(message.tabID, false, undefined)
@@ -568,7 +640,6 @@ export class FeatureDevController {
                 createUserFacingErrorMessage(`Failed to retry request: ${err.message}`),
                 message.tabID,
                 this.retriesRemaining(session),
-                session?.state.phase,
                 session?.conversationIdUnsafe
             )
         } finally {
@@ -579,7 +650,7 @@ export class FeatureDevController {
 
     private getFollowUpOptions(phase: SessionStatePhase | undefined): ChatItemAction[] {
         switch (phase) {
-            case 'Approach':
+            case DevPhase.APPROACH:
                 return [
                     {
                         pillText: 'Generate code',
@@ -587,7 +658,7 @@ export class FeatureDevController {
                         status: 'info',
                     },
                 ]
-            case 'Codegen':
+            case DevPhase.CODEGEN:
                 return [
                     {
                         pillText: 'Insert code',
@@ -694,22 +765,28 @@ export class FeatureDevController {
     private async fileClicked(message: fileClickedMessage) {
         // TODO: add Telemetry here
         const tabId: string = message.tabID
+        const messageId = message.messageId
         const filePathToUpdate: string = message.filePath
 
         const session = await this.sessionStorage.getSession(tabId)
-        const filePathIndex = (session.state.filePaths ?? []).findIndex(obj => obj.relativePath === filePathToUpdate)
+        const filePathIndex = (session.state.filePaths ?? []).findIndex((obj) => obj.relativePath === filePathToUpdate)
         if (filePathIndex !== -1 && session.state.filePaths) {
             session.state.filePaths[filePathIndex].rejected = !session.state.filePaths[filePathIndex].rejected
         }
         const deletedFilePathIndex = (session.state.deletedFiles ?? []).findIndex(
-            obj => obj.relativePath === filePathToUpdate
+            (obj) => obj.relativePath === filePathToUpdate
         )
         if (deletedFilePathIndex !== -1 && session.state.deletedFiles) {
             session.state.deletedFiles[deletedFilePathIndex].rejected =
                 !session.state.deletedFiles[deletedFilePathIndex].rejected
         }
 
-        await session.updateFilesPaths(tabId, session.state.filePaths ?? [], session.state.deletedFiles ?? [])
+        await session.updateFilesPaths(
+            tabId,
+            session.state.filePaths ?? [],
+            session.state.deletedFiles ?? [],
+            messageId
+        )
     }
 
     private async openDiff(message: OpenDiffMessage) {
@@ -766,7 +843,6 @@ export class FeatureDevController {
                     createUserFacingErrorMessage(err.message),
                     message.tabID,
                     this.retriesRemaining(session),
-                    session?.state.phase,
                     session?.conversationIdUnsafe
                 )
             }

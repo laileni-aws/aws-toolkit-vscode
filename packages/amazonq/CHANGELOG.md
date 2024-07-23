@@ -1,3 +1,78 @@
+## 1.16.0 2024-07-18
+
+- **Bug Fix** Amazon q /dev: include granular error handling for code generation failed state
+- **Bug Fix** Amazon Q Code Transformation: always show build logs from last job run
+- **Bug Fix** Unexpected SSO expiration on Windows due to EPERM
+
+## 1.15.0 2024-07-15
+
+- **Bug Fix** Amazon Q Chat: Fixes a bug when the prompt input exceeds the width of the chat box it's not always wrapped correctly.
+- **Bug Fix** Amazon Q: Corrected a miswording in the Amazon Q: Share Content With AWS setting.
+- **Bug Fix** Amazon Q Chat: Fixes a bug when user input contains 4 or more spaces at the beginning of the line for multiline inputs, that line appears like a code block instead of a paragraph
+
+## 1.14.0 2024-07-11
+
+- **Feature** Amazon Q/dev proactively show code generation iterations
+
+## 1.13.0 2024-07-11
+
+- **Bug Fix** AD/LDAP users may see "uv_os_get_passwd ENOENT" error on startup #5277
+- **Feature** Add support for [Amazon Q Chat Workspace Context](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/workspace-context.html). Customers can use `@workspace` to ask questions regarding local workspace.
+
+## 1.12.0 2024-07-08
+
+- **Bug Fix** Amazon Q Security Scans: Fixed unnecessary yellow lines appearing in both auto scans and project scans.
+- **Bug Fix** Amazon Q Chat: Fixed prompt input becomes invisible if an html special character is inserted
+- **Bug Fix** Amazon Q Chat: Fixed button font sizes are too big
+- **Bug Fix** Amazon Q Chat: Fixed buttons don't show borders inside a message
+- **Bug Fix** Amazon Q Code Transform: Link UI messages to troubleshooting docs
+- **Bug Fix** Amazon Q /dev command: improve user error messages
+- **Bug Fix** Amazon Q Chat: Fixed button texts are cropped too short
+- **Bug Fix** Amazon Q Chat: Fixed prompt input and selected command horizontal alignment
+- **Bug Fix** Amazon Q Chat: Fixed prompt input becomes invisible when multine text inserted with paste
+- **Feature** Q feature dev: Only use relevant code and related files
+
+## 1.11.0 2024-06-27
+
+- **Bug Fix** Amazon Q Chat: Fix for inline buttons don't have borders
+- **Bug Fix** Amazon Q Chat: Fix for some edge cases when followups appear on top without styles
+- **Bug Fix** Amazon Q Chat: Fix for prompt input removes whole word if it starts with @ character but there is no context selected
+- **Bug Fix** Amazon Q Chat: Fix for prompt input doesn't show multi line content properly after it reaches 10-15 lines
+- **Bug Fix** Amazon Q /dev command: Fix in progress experience for ongoing backend calls
+
+## 1.10.0 2024-06-21
+
+- **Bug Fix** Security Scan: Fixes an issue where project-scans time out for larger projects.
+- **Bug Fix** Amazon Q /dev command: Fix file rejections for files outside of src/
+- **Bug Fix** Feature Development: update /dev welcome message
+- **Bug Fix** Amazon Q Chat: Fixed broken code blocks with typewriter text in list items.
+- **Feature** UX: New style for the login window
+- **Removal** Auth: No longer share SSO sessions with AWS Toolkit.
+
+## 1.9.0 2024-06-14
+
+- **Bug Fix** Amazon Q inline suggestions: remember `Pause Auto-Suggestions` after IDE restart
+- **Bug Fix** Amazon Q /dev command: stop showing spinner when there is an error.
+- **Bug Fix** Security Scan: Fixes an issue where auto-scans cause the editor to become unresponsive for larger projects.
+- **Bug Fix** Fix(Amazon Q Code Transformation): show more detailed error messages for proxy issues
+- **Feature** Amazon Q Code Transform: Allow user to view transformation build log
+
+## 1.8.0 2024-06-07
+
+- **Bug Fix** fix(featureDev): fix file rejection for multi-workspaces
+- **Feature** The `Send to Amazon Q` [context menu](https://github.com/aws/aws-toolkit-vscode/assets/371007/ce4c61a4-1b58-48ee-8500-56667d45dd7d) was renamed to `Amazon Q`
+- **Feature** Amazon Q Transform: Increase project upload size limit to 2GB
+- **Feature** feat(featureDev): generated plan being shown from top
+- **Feature** Add additional commands for Amazon Q.
+
+## 1.7.0 2024-05-30
+
+- **Bug Fix** Feature Development: File rejection is not rejecting a file when code is generated
+- **Bug Fix** Security Scan: Improved accuracy when applying security fixes
+- **Bug Fix** Amazon Q Code Transformation: show more specific error messages on failure cases
+- **Feature** Security Scan: Support for scanning files outside of workspaces.
+- **Feature** Amazon Q now publishes to Open VSX: https://open-vsx.org/namespace/amazonwebservices
+
 ## 1.6.0 2024-05-21
 
 - **Bug Fix** Amazon Q Chat: Inside chat body, if there is a code block inside a list item it shows <br/> tags

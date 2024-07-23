@@ -5,7 +5,7 @@
  * This class is responsible for responding to UI events by calling
  * the Gumby extension.
  */
-import fs from 'fs'
+import nodefs from 'fs'
 import path from 'path'
 import * as vscode from 'vscode'
 import { GumbyNamedMessages, Messenger } from './messenger/messenger'
@@ -20,6 +20,7 @@ import {
     compileProject,
     finishHumanInTheLoop,
     getValidCandidateProjects,
+    openBuildLogFile,
     openHilPomFile,
     postTransformationJob,
     processTransformFormInput,
@@ -35,17 +36,23 @@ import {
     ModuleUploadError,
     NoJavaProjectsFoundError,
     NoMavenJavaProjectsFoundError,
+    TransformationPreBuildError,
 } from '../../errors'
 import * as CodeWhispererConstants from '../../../codewhisperer/models/constants'
 import MessengerUtils, { ButtonActions, GumbyCommands } from './messenger/messengerUtils'
-import { CancelActionPositions, JDKToTelemetryValue } from '../../telemetry/codeTransformTelemetry'
+import { CancelActionPositions, JDKToTelemetryValue, telemetryUndefined } from '../../telemetry/codeTransformTelemetry'
 import { openUrl } from '../../../shared/utilities/vsCodeUtils'
-import { telemetry, CodeTransformJavaSourceVersionsAllowed } from '../../../shared/telemetry/telemetry'
+import {
+    telemetry,
+    CodeTransformJavaTargetVersionsAllowed,
+    CodeTransformJavaSourceVersionsAllowed,
+} from '../../../shared/telemetry/telemetry'
 import { MetadataResult } from '../../../shared/telemetry/telemetryClient'
 import { CodeTransformTelemetryState } from '../../telemetry/codeTransformTelemetryState'
 import { getAuthType } from '../../../codewhisperer/service/transformByQ/transformApiHandler'
 import DependencyVersions from '../../models/dependencies'
-
+import { getStringHash } from '../../../shared/utilities/textUtilities'
+import { getTelemetryReasonDesc } from '../../../shared/errors'
 // These events can be interactions within the chat,
 // or elsewhere in the IDE
 export interface ChatControllerEventEmitters {
@@ -78,55 +85,55 @@ export class GumbyController {
         this.sessionStorage = ChatSessionManager.Instance
         this.authController = new AuthController()
 
-        this.chatControllerMessageListeners.transformSelected.event(data => {
+        this.chatControllerMessageListeners.transformSelected.event((data) => {
             return this.transformInitiated(data)
         })
 
-        this.chatControllerMessageListeners.tabOpened.event(data => {
+        this.chatControllerMessageListeners.tabOpened.event((data) => {
             return this.tabOpened(data)
         })
 
-        this.chatControllerMessageListeners.tabClosed.event(data => {
+        this.chatControllerMessageListeners.tabClosed.event((data) => {
             return this.tabClosed(data)
         })
 
-        this.chatControllerMessageListeners.authClicked.event(data => {
+        this.chatControllerMessageListeners.authClicked.event((data) => {
             this.authClicked(data)
         })
 
-        this.chatControllerMessageListeners.commandSentFromIDE.event(data => {
+        this.chatControllerMessageListeners.commandSentFromIDE.event((data) => {
             return this.commandSentFromIDE(data)
         })
 
-        this.chatControllerMessageListeners.formActionClicked.event(data => {
+        this.chatControllerMessageListeners.formActionClicked.event((data) => {
             return this.formActionClicked(data)
         })
 
-        this.chatControllerMessageListeners.transformationFinished.event(data => {
+        this.chatControllerMessageListeners.transformationFinished.event((data) => {
             return this.transformationFinished(data)
         })
 
-        this.chatControllerMessageListeners.processHumanChatMessage.event(data => {
+        this.chatControllerMessageListeners.processHumanChatMessage.event((data) => {
             return this.processHumanChatMessage(data)
         })
 
-        this.chatControllerMessageListeners.linkClicked.event(data => {
+        this.chatControllerMessageListeners.linkClicked.event((data) => {
             this.openLink(data)
         })
 
-        this.chatControllerMessageListeners.humanInTheLoopStartIntervention.event(data => {
+        this.chatControllerMessageListeners.humanInTheLoopStartIntervention.event((data) => {
             return this.startHILIntervention(data)
         })
 
-        this.chatControllerMessageListeners.humanInTheLoopPromptUserForDependency.event(data => {
+        this.chatControllerMessageListeners.humanInTheLoopPromptUserForDependency.event((data) => {
             return this.HILPromptForDependency(data)
         })
 
-        this.chatControllerMessageListeners.humanInTheLoopSelectionUploaded.event(data => {
+        this.chatControllerMessageListeners.humanInTheLoopSelectionUploaded.event((data) => {
             return this.HILDependencySelectionUploaded(data)
         })
 
-        this.chatControllerMessageListeners.errorThrown.event(data => {
+        this.chatControllerMessageListeners.errorThrown.event((data) => {
             return this.handleError(data)
         })
     }
@@ -226,7 +233,7 @@ export class GumbyController {
 
     private async validateProjectsWithReplyOnError(message: any): Promise<TransformationCandidateProject[]> {
         let telemetryJavaVersion = JDKToTelemetryValue(JDKVersion.UNSUPPORTED) as CodeTransformJavaSourceVersionsAllowed
-        let errorCode = undefined
+        let err
         try {
             const validProjects = await getValidCandidateProjects()
             if (validProjects.length > 0) {
@@ -235,23 +242,24 @@ export class GumbyController {
                 telemetryJavaVersion = JDKToTelemetryValue(javaVersion) as CodeTransformJavaSourceVersionsAllowed
             }
             return validProjects
-        } catch (err: any) {
-            if (err instanceof NoJavaProjectsFoundError) {
+        } catch (e: any) {
+            if (e instanceof NoJavaProjectsFoundError) {
                 this.messenger.sendUnrecoverableErrorResponse('no-java-project-found', message.tabID)
-            } else if (err instanceof NoMavenJavaProjectsFoundError) {
+            } else if (e instanceof NoMavenJavaProjectsFoundError) {
                 this.messenger.sendUnrecoverableErrorResponse('no-maven-java-project-found', message.tabID)
             } else {
                 this.messenger.sendUnrecoverableErrorResponse('no-project-found', message.tabID)
             }
-            errorCode = err.code
+            err = e
         } finally {
             // New projectDetails metric should always be fired whether the project was valid or invalid
             telemetry.codeTransform_projectDetails.emit({
                 passive: true,
                 codeTransformSessionId: CodeTransformTelemetryState.instance.getSessionId(),
                 codeTransformLocalJavaVersion: telemetryJavaVersion,
-                result: errorCode ? MetadataResult.Fail : MetadataResult.Pass,
-                reason: errorCode,
+                result: err?.code ? MetadataResult.Fail : MetadataResult.Pass,
+                reason: err?.code,
+                reasonDesc: getTelemetryReasonDesc(err),
             })
         }
         return []
@@ -267,7 +275,7 @@ export class GumbyController {
                 this.messenger.sendJobFinishedMessage(message.tabID, CodeWhispererConstants.jobCancelledChatMessage)
                 break
             case ButtonActions.VIEW_TRANSFORMATION_HUB:
-                await vscode.commands.executeCommand(GumbyCommands.FOCUS_TRANSFORMATION_HUB)
+                await vscode.commands.executeCommand(GumbyCommands.FOCUS_TRANSFORMATION_HUB, CancelActionPositions.Chat)
                 this.messenger.sendJobSubmittedMessage(message.tabID)
                 break
             case ButtonActions.STOP_TRANSFORMATION_JOB:
@@ -276,6 +284,7 @@ export class GumbyController {
                 await cleanupTransformationJob()
                 break
             case ButtonActions.CONFIRM_START_TRANSFORMATION_FLOW:
+                this.resetTransformationChatFlow()
                 this.messenger.sendCommandMessage({ ...message, command: GumbyCommands.CLEAR_CHAT })
                 await this.transformInitiated(message)
                 break
@@ -289,13 +298,17 @@ export class GumbyController {
             case ButtonActions.OPEN_FILE:
                 await openHilPomFile()
                 break
+            case ButtonActions.OPEN_BUILD_LOG:
+                await openBuildLogFile()
+                this.messenger.sendViewBuildLog(message.tabID)
+                break
         }
     }
 
     // prompt user to pick project and specify source JDK version
     private async initiateTransformationOnProject(message: any) {
         const authType = await getAuthType()
-        telemetry.codeTransform_jobIsStartedFromChatPrompt.emit({
+        telemetry.codeTransform_jobStart.emit({
             codeTransformSessionId: CodeTransformTelemetryState.instance.getSessionId(),
             credentialSourceId: authType,
             result: MetadataResult.Pass,
@@ -324,6 +337,18 @@ export class GumbyController {
             )
         }
 
+        const projectPath = transformByQState.getProjectPath()
+        telemetry.codeTransform_jobStartedCompleteFromPopupDialog.emit({
+            codeTransformSessionId: CodeTransformTelemetryState.instance.getSessionId(),
+            codeTransformJavaSourceVersionsAllowed: JDKToTelemetryValue(
+                transformByQState.getSourceJDKVersion()!
+            ) as CodeTransformJavaSourceVersionsAllowed,
+            codeTransformJavaTargetVersionsAllowed: JDKToTelemetryValue(
+                transformByQState.getTargetJDKVersion()
+            ) as CodeTransformJavaTargetVersionsAllowed,
+            codeTransformProjectId: projectPath === undefined ? telemetryUndefined : getStringHash(projectPath),
+            result: MetadataResult.Pass,
+        })
         try {
             this.sessionStorage.getSession().conversationState = ConversationState.COMPILING
             this.messenger.sendCompilationInProgress(message.tabID)
@@ -372,10 +397,12 @@ export class GumbyController {
         await this.prepareProjectForSubmission(message)
     }
 
-    private transformationFinished(data: { message?: string; tabID: string }) {
+    private transformationFinished(data: { message: string | undefined; tabID: string }) {
         this.resetTransformationChatFlow()
         // at this point job is either completed, partially_completed, cancelled, or failed
-        this.messenger.sendJobFinishedMessage(data.tabID, data.message)
+        if (data.message) {
+            this.messenger.sendJobFinishedMessage(data.tabID, data.message)
+        }
     }
 
     private resetTransformationChatFlow() {
@@ -433,11 +460,19 @@ export class GumbyController {
             this.messenger.sendKnownErrorResponse('no-alternate-dependencies-found', message.tabID)
             await this.continueTransformationWithoutHIL(message)
         } else if (message.error instanceof ModuleUploadError) {
-            this.messenger.sendUnrecoverableErrorResponse('upload-to-s3-failed', message.tabID)
             this.resetTransformationChatFlow()
         } else if (message.error instanceof JobStartError) {
-            this.messenger.sendUnrecoverableErrorResponse('job-start-failed', message.tabID)
             this.resetTransformationChatFlow()
+        } else if (message.error instanceof TransformationPreBuildError) {
+            this.messenger.sendJobSubmittedMessage(message.tabID, true)
+            this.messenger.sendAsyncEventProgress(
+                message.tabID,
+                true,
+                undefined,
+                GumbyNamedMessages.JOB_FAILED_IN_PRE_BUILD
+            )
+            await openBuildLogFile()
+            this.messenger.sendViewBuildLog(message.tabID)
         }
     }
 
@@ -449,7 +484,7 @@ export class GumbyController {
         try {
             await finishHumanInTheLoop()
         } catch (err: any) {
-            this.transformationFinished({ tabID: message.tabID })
+            this.transformationFinished({ tabID: message.tabID, message: (err as Error).message })
         }
 
         this.messenger.sendStaticTextResponse('end-HIL-early', message.tabID)
@@ -470,5 +505,5 @@ export class GumbyController {
  */
 function extractPath(text: string): string | undefined {
     const resolvedPath = path.resolve(text.trim())
-    return fs.existsSync(resolvedPath) && fs.lstatSync(resolvedPath).isDirectory() ? resolvedPath : undefined
+    return nodefs.existsSync(resolvedPath) && nodefs.lstatSync(resolvedPath).isDirectory() ? resolvedPath : undefined
 }

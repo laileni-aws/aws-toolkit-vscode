@@ -7,7 +7,7 @@ import * as vscode from 'vscode'
 import * as localizedText from '../../shared/localizedText'
 import { Auth } from '../../auth/auth'
 import { ToolkitError } from '../../shared/errors'
-import { getSecondaryAuth } from '../../auth/secondaryAuth'
+import { getSecondaryAuth, setScopes } from '../../auth/secondaryAuth'
 import { isCloud9, isSageMaker } from '../../shared/extensionUtilities'
 import { AmazonQPromptSettings } from '../../shared/settings'
 import {
@@ -24,7 +24,7 @@ import {
     scopesFeatureDev,
     scopesGumby,
     isIdcSsoConnection,
-    AwsConnection,
+    hasExactScopes,
 } from '../../auth/connection'
 import { getLogger } from '../../shared/logger'
 import { Commands } from '../../shared/vscode/commands2'
@@ -33,6 +33,7 @@ import { onceChanged, once } from '../../shared/utilities/functionUtils'
 import { indent } from '../../shared/utilities/textUtilities'
 import { showReauthenticateMessage } from '../../shared/utilities/messages'
 import { showAmazonQWalkthroughOnce } from '../../amazonq/onboardingPage/walkthrough'
+import { setContext } from '../../shared/vscode/setContext'
 
 /** Backwards compatibility for connections w pre-chat scopes */
 export const codeWhispererCoreScopes = [...scopesCodeWhispererCore]
@@ -102,7 +103,7 @@ export class AuthUtil {
     public constructor(public readonly auth = Auth.instance) {}
 
     public initCodeWhispererHooks = once(() => {
-        this.auth.onDidChangeConnectionState(async e => {
+        this.auth.onDidChangeConnectionState(async (e) => {
             getLogger().info(`codewhisperer: connection changed to ${e.state}: ${e.id}`)
             if (e.state !== 'authenticating') {
                 await this.refreshCodeWhisperer()
@@ -123,12 +124,13 @@ export class AuthUtil {
                 Commands.tryExecute('aws.amazonq.updateReferenceLog'),
             ])
 
-            await vscode.commands.executeCommand('setContext', 'aws.codewhisperer.connected', this.isConnected())
+            await setContext('aws.codewhisperer.connected', this.isConnected())
 
             // To check valid connection
             if (this.isValidEnterpriseSsoInUse() || (this.isBuilderIdInUse() && !this.isConnectionExpired())) {
                 // start the feature config polling job
                 await vscode.commands.executeCommand('aws.amazonq.fetchFeatureConfigs')
+                await showAmazonQWalkthroughOnce()
             }
             await this.setVscodeContextProps()
         })
@@ -139,34 +141,10 @@ export class AuthUtil {
             return
         }
 
-        await vscode.commands.executeCommand('setContext', 'aws.codewhisperer.connected', this.isConnected())
+        await setContext('aws.codewhisperer.connected', this.isConnected())
         const doShowAmazonQLoginView = !this.isConnected() || this.isConnectionExpired()
-        await vscode.commands.executeCommand('setContext', 'aws.amazonq.showLoginView', doShowAmazonQLoginView)
-        await vscode.commands.executeCommand(
-            'setContext',
-            'aws.codewhisperer.connectionExpired',
-            this.isConnectionExpired()
-        )
-    }
-
-    /* Callback used by Amazon Q to delete connection status & scope when this deletion is made by AWS Toolkit
-     ** 1. NO event should be emitted from this deletion
-     ** 2. Should update the context key to update UX
-     */
-    public async onDeleteConnection(id: string) {
-        await this.secondaryAuth.onDeleteConnection(id)
-        await this.setVscodeContextProps()
-        await vscode.commands.executeCommand('aws.amazonq.refreshStatusBar')
-    }
-
-    /* Callback used by Amazon Q to delete connection status & scope when this deletion is made by AWS Toolkit
-     ** 1. NO event should be emitted from this deletion
-     ** 2. Should update the context key to update UX
-     */
-    public async onUpdateConnection(connection: AwsConnection) {
-        await this.auth.onConnectionUpdate(connection)
-        await this.setVscodeContextProps()
-        await vscode.commands.executeCommand('aws.amazonq.refreshStatusBar')
+        await setContext('aws.amazonq.showLoginView', doShowAmazonQLoginView)
+        await setContext('aws.codewhisperer.connectionExpired', this.isConnectionExpired())
     }
 
     public reformatStartUrl(startUrl: string | undefined) {
@@ -222,8 +200,6 @@ export class AuthUtil {
             conn = await this.auth.reauthenticate(conn)
         }
 
-        await showAmazonQWalkthroughOnce()
-
         return this.secondaryAuth.useNewConnection(conn)
     }
 
@@ -242,8 +218,6 @@ export class AuthUtil {
         if (this.auth.getConnectionState(conn) === 'invalid') {
             conn = await this.auth.reauthenticate(conn)
         }
-
-        await showAmazonQWalkthroughOnce()
 
         return this.secondaryAuth.useNewConnection(conn)
     }
@@ -344,10 +318,9 @@ export class AuthUtil {
                 return
             }
 
-            if (!isValidAmazonQConnection(this.conn)) {
-                const conn = await this.secondaryAuth.addScopes(this.conn, amazonQScopes)
+            if (!hasExactScopes(this.conn, amazonQScopes)) {
+                const conn = await setScopes(this.conn, amazonQScopes, this.auth)
                 await this.secondaryAuth.useNewConnection(conn)
-                return
             }
 
             await this.auth.reauthenticate(this.conn)
@@ -430,30 +403,11 @@ export class AuthUtil {
                 state[Features.codewhispererCore] = AuthStates.connected
             }
             if (isValidAmazonQConnection(conn)) {
-                Object.values(Features).forEach(v => (state[v as Feature] = AuthStates.connected))
+                Object.values(Features).forEach((v) => (state[v as Feature] = AuthStates.connected))
             }
         }
 
         return state
-    }
-
-    /**
-     * From the given connections, returns a connection that has some connection to Q.
-     *
-     * HACK: There is an edge case where we want to connect to the connection that only has
-     *       the old CW scopes, but not all Q scopes. So this function at the bare minimum returns
-     *       a connection if it has some CW scopes.
-     */
-    findMinimalQConnection(connections: AwsConnection[]): AwsConnection | undefined {
-        const hasQScopes = (c: AwsConnection) => codeWhispererCoreScopes.every(s => c.scopes?.includes(s))
-        const score = (c: AwsConnection) => Number(hasQScopes(c)) * 10 + Number(c.state === 'valid')
-        connections.sort(function (a, b) {
-            return score(b) - score(a)
-        })
-        if (hasQScopes(connections[0])) {
-            return connections[0]
-        }
-        return undefined
     }
 }
 

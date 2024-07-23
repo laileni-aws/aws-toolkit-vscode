@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import * as child_process from 'child_process'
+import * as proc from 'child_process'
 import * as crossSpawn from 'cross-spawn'
 import * as logger from '../logger'
 import { Timeout, CancellationError, waitUntil } from './timeoutUtils'
@@ -35,7 +35,7 @@ export interface ChildProcessOptions {
     /** A `Timeout` token. The running process will be terminated on expiration or cancellation. */
     timeout?: Timeout
     /** Options sent to the `spawn` command. This is merged in with the base options if they exist. */
-    spawnOptions?: child_process.SpawnOptions
+    spawnOptions?: proc.SpawnOptions
     /** Callback for intercepting text from the stdout stream. */
     onStdout?: (text: string, context: RunParameterContext) => void
     /** Callback for intercepting text from the stderr stream. */
@@ -67,7 +67,7 @@ export const eof = Symbol('EOF')
  */
 export class ChildProcess {
     static #runningProcesses: Map<number, ChildProcess> = new Map()
-    #childProcess: child_process.ChildProcess | undefined
+    #childProcess: proc.ChildProcess | undefined
     #processErrors: Error[] = []
     #processResult: ChildProcessResult | undefined
     #log: logger.Logger
@@ -160,7 +160,7 @@ export class ChildProcess {
                 timeout,
                 logger: this.#log,
                 stop: this.stop.bind(this),
-                reportError: err => errorHandler(err instanceof Error ? err : new Error(err)),
+                reportError: (err) => errorHandler(err instanceof Error ? err : new Error(err)),
             }
 
             if (timeout && timeout?.completed) {
@@ -276,12 +276,12 @@ export class ChildProcess {
 
             if (force === true) {
                 waitUntil(async () => this.stopped, { timeout: 3000, interval: 200, truthy: true })
-                    .then(stopped => {
+                    .then((stopped) => {
                         if (!stopped) {
                             child.kill('SIGKILL')
                         }
                     })
-                    .catch(e => {
+                    .catch((e) => {
                         this.#log.warn(`stop(): SIGKILL failed: pid=${pid} command=${command}`)
                     })
             }
@@ -291,7 +291,7 @@ export class ChildProcess {
     }
 
     #registerLifecycleListeners(
-        process: child_process.ChildProcess,
+        process: proc.ChildProcess,
         errorHandler: (error: Error, forceStop?: boolean) => void,
         options?: ChildProcessOptions
     ): void {
@@ -332,10 +332,10 @@ export class ChildProcess {
         }
 
         if (input === eof) {
-            return new Promise<void>(resolve => stdin.end('', resolve))
+            return new Promise<void>((resolve) => stdin.end('', resolve))
         }
 
-        return new Promise<void>((resolve, reject) => stdin.write(input, e => (e ? reject(e) : resolve())))
+        return new Promise<void>((resolve, reject) => stdin.write(input, (e) => (e ? reject(e) : resolve())))
     }
 
     /**

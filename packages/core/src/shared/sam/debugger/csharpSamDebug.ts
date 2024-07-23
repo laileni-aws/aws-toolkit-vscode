@@ -77,9 +77,10 @@ export async function invokeCsharpLambda(ctx: ExtContext, config: SamLaunchReque
     config.samLocalInvokeCommand = new DefaultSamLocalInvokeCommand([waitForDebuggerMessages.DOTNET])
     // eslint-disable-next-line @typescript-eslint/unbound-method
     config.onWillAttachDebugger = waitForPort
+    const platformArchitecture = os.arch()
 
     if (!config.noDebug) {
-        if (config.architecture === 'arm64') {
+        if ([config.architecture, platformArchitecture].includes('arm64')) {
             void vscode.window.showWarningMessage(
                 localize(
                     'AWS.sam.noArm.dotnet.debug',
@@ -219,7 +220,7 @@ export async function makeDotnetDebugConfiguration(
     codeUri: string
 ): Promise<DotNetDebugConfiguration> {
     if (config.noDebug) {
-        throw Error(`SAM debug: invalid config ${config}`)
+        throw Error(`SAM debug: invalid config: ${config.name}`)
     }
     const pipeArgs = ['-c', `docker exec -i $(docker ps -q -f publish=${config.debugPort}) \${debuggerCommand}`]
     config.debuggerPath = pathutil.normalize(getDebuggerPath(codeUri))
@@ -235,7 +236,7 @@ export async function makeDotnetDebugConfiguration(
 
     if (os.platform() === 'win32') {
         // Coerce drive letter to uppercase. While Windows is case-insensitive, sourceFileMap is case-sensitive.
-        codeUri = codeUri.replace(pathutil.driveLetterRegex, match => match.toUpperCase())
+        codeUri = codeUri.replace(pathutil.driveLetterRegex, (match) => match.toUpperCase())
     }
 
     if (isImageLambda) {
@@ -254,7 +255,7 @@ export async function makeDotnetDebugConfiguration(
         }
         // we could safely leave this entry in, but might as well give the user full control if they're specifying mappings
         delete config.sourceFileMap['/build']
-        config.lambda.pathMappings.forEach(mapping => {
+        config.lambda.pathMappings.forEach((mapping) => {
             // this looks weird because we're mapping the PDB path to the local workspace
             config.sourceFileMap[mapping.remoteRoot] = mapping.localRoot
         })

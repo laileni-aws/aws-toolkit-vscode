@@ -8,7 +8,7 @@ import * as nls from 'vscode-nls'
 
 import * as codecatalyst from './codecatalyst/activation'
 import { activate as activateAwsExplorer } from './awsexplorer/activation'
-import { activate as activateCloudWatchLogs } from './cloudWatchLogs/activation'
+import { activate as activateCloudWatchLogs } from './awsService/cloudWatchLogs/activation'
 import { CredentialsProviderManager } from './auth/providers/credentialsProviderManager'
 import { SharedCredentialsProviderFactory } from './auth/providers/sharedCredentialsProviderFactory'
 import { activate as activateSchemas } from './eventSchemas/activation'
@@ -23,22 +23,22 @@ import {
     showWelcomeMessage,
 } from './shared/extensionUtilities'
 import { getLogger, Logger } from './shared/logger/logger'
-import { activate as activateEcr } from './ecr/activation'
-import { activate as activateEc2 } from './ec2/activation'
+import { activate as activateEcr } from './awsService/ecr/activation'
+import { activate as activateEc2 } from './awsService/ec2/activation'
 import { activate as activateSam } from './shared/sam/activation'
-import { activate as activateS3 } from './s3/activation'
+import { activate as activateS3 } from './awsService/s3/activation'
 import * as awsFiletypes from './shared/awsFiletypes'
-import { activate as activateApiGateway } from './apigateway/activation'
+import { activate as activateApiGateway } from './awsService/apigateway/activation'
 import { activate as activateStepFunctions } from './stepFunctions/activation'
 import { activate as activateSsmDocument } from './ssmDocument/activation'
 import { activate as activateDynamicResources } from './dynamicResources/activation'
-import { activate as activateEcs } from './ecs/activation'
-import { activate as activateAppRunner } from './apprunner/activation'
-import { activate as activateIot } from './iot/activation'
+import { activate as activateEcs } from './awsService/ecs/activation'
+import { activate as activateAppRunner } from './awsService/apprunner/activation'
+import { activate as activateIot } from './awsService/iot/activation'
 import { activate as activateDev } from './dev/activation'
 import { activate as activateApplicationComposer } from './applicationcomposer/activation'
-import { activate as activateRedshift } from './redshift/activation'
-import { activate as activateIamPolicyChecks } from './accessanalyzer/activation'
+import { activate as activateRedshift } from './awsService/redshift/activation'
+import { activate as activateIamPolicyChecks } from './awsService/accessanalyzer/activation'
 import { Ec2CredentialsProvider } from './auth/providers/ec2CredentialsProvider'
 import { EnvVarsCredentialsProvider } from './auth/providers/envVarsCredentialsProvider'
 import { EcsCredentialsProvider } from './auth/providers/ecsCredentialsProvider'
@@ -48,18 +48,18 @@ import globals from './shared/extensionGlobals'
 import { Experiments, Settings, showSettingsFailedMsg } from './shared/settings'
 import { isReleaseVersion } from './shared/vscode/env'
 import { telemetry } from './shared/telemetry/telemetry'
-import { Auth } from './auth/auth'
+import { Auth, SessionSeparationPrompt } from './auth/auth'
 import { registerSubmitFeedback } from './feedback/vue/submitFeedback'
-import { activateShared, deactivateShared, emitUserState } from './extensionShared'
+import { activateCommon, deactivateCommon, emitUserState } from './extensionCommon'
 import { learnMoreAmazonQCommand, qExtensionPageCommand, dismissQTree } from './amazonq/explorer/amazonQChildrenNodes'
-import { AuthUtil, isPreviousQUser } from './codewhisperer/util/authUtil'
+import { AuthUtil, codeWhispererCoreScopes, isPreviousQUser } from './codewhisperer/util/authUtil'
 import { installAmazonQExtension } from './codewhisperer/commands/basicCommands'
 import { isExtensionInstalled, VSCODE_EXTENSION_ID } from './shared/utilities'
-import { amazonQInstallDismissedKey } from './codewhisperer/models/constants'
 import { ExtensionUse } from './auth/utils'
 import { ExtStartUpSources } from './shared/telemetry'
-
-export { makeEndpointsProvider, registerCommands } from './extensionShared'
+import { activate as activateThreatComposerEditor } from './threatComposer/activation'
+import { isSsoConnection, hasScopes } from './auth/connection'
+import { setContext } from './shared'
 
 let localize: nls.LocalizeFunc
 
@@ -67,7 +67,7 @@ let localize: nls.LocalizeFunc
  * The entrypoint for the nodejs version of the toolkit
  *
  * **CONTRIBUTORS** If you are adding code to this function prioritize adding it to
- * {@link activateShared} if appropriate
+ * {@link activateCommon} if appropriate
  */
 export async function activate(context: vscode.ExtensionContext) {
     const activationStartedOn = Date.now()
@@ -76,7 +76,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     try {
         // IMPORTANT: If you are doing setup that should also work in web mode (browser), it should be done in the function below
-        const extContext = await activateShared(context, contextPrefix, false)
+        const extContext = await activateCommon(context, contextPrefix, false)
 
         initializeCredentialsProviderManager()
 
@@ -85,7 +85,7 @@ export async function activate(context: vscode.ExtensionContext) {
         toolkitEnvDetails
             .split(/\r?\n/)
             .filter(Boolean)
-            .forEach(line => getLogger().info(line))
+            .forEach((line) => getLogger().info(line))
 
         globals.awsContextCommands = new AwsContextCommands(globals.regionProvider, Auth.instance)
         globals.schemaService = new SchemaService()
@@ -95,7 +95,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const experiments = Experiments.instance
 
         experiments.onDidChange(({ key }) => {
-            telemetry.aws_experimentActivation.run(span => {
+            telemetry.aws_experimentActivation.run((span) => {
                 // Record the key prior to reading the setting as `get` may throw
                 span.record({ experimentId: key })
                 span.record({ experimentState: experiments.get(key) ? 'activated' : 'deactivated' })
@@ -116,11 +116,30 @@ export async function activate(context: vscode.ExtensionContext) {
         // do not enable codecatalyst for sagemaker
         // TODO: remove setContext if SageMaker adds the context to their IDE
         if (!isSageMaker()) {
-            await vscode.commands.executeCommand('setContext', 'aws.isSageMaker', false)
+            await setContext('aws.isSageMaker', false)
             await codecatalyst.activate(extContext)
         } else {
-            await vscode.commands.executeCommand('setContext', 'aws.isSageMaker', true)
+            await setContext('aws.isSageMaker', true)
         }
+
+        // Clean up remaining logins after codecatalyst activated and ran its cleanup.
+        // Because we are splitting auth sessions by extension, we can't use Amazon Q
+        // connections anymore.
+        // TODO: Remove after some time?
+        for (const conn of await Auth.instance.listConnections()) {
+            if (isSsoConnection(conn) && hasScopes(conn, codeWhispererCoreScopes)) {
+                getLogger().debug(
+                    `forgetting connection: ${conn.id} with starturl/scopes: ${conn.startUrl} / %O`,
+                    conn.scopes
+                )
+                await Auth.instance.forgetConnection(conn)
+                await SessionSeparationPrompt.instance.showForCommand('aws.toolkit.auth.manageConnections')
+            }
+        }
+
+        // Display last prompt if connections were forgotten in prior sessions
+        // but the user did not interact or sign in again. Useful in case the user misses it the first time.
+        await SessionSeparationPrompt.instance.showAnyPreviousPrompt()
 
         await activateCloudFormationTemplateRegistry(context)
 
@@ -170,57 +189,10 @@ export async function activate(context: vscode.ExtensionContext) {
                 dismissQTree.register()
                 installAmazonQExtension.register()
 
-                if (!isExtensionInstalled(VSCODE_EXTENSION_ID.amazonq)) {
-                    await telemetry.toolkit_showNotification.run(async () => {
-                        if (isPreviousQUser()) {
-                            await installAmazonQExtension.execute()
-                            telemetry.record({ id: 'amazonQStandaloneInstalled' })
-                            void vscode.window.showInformationMessage(
-                                "Amazon Q is now its own extension.\n\nWe've auto-installed it for you with all the same features and settings from CodeWhisperer and Amazon Q chat."
-                            )
-                        } else {
-                            const dismissedInstall =
-                                globals.context.globalState.get<boolean>(amazonQInstallDismissedKey)
-                            if (!dismissedInstall) {
-                                telemetry.record({ id: 'amazonQStandaloneChange' })
-                                void vscode.window
-                                    .showInformationMessage(
-                                        'Amazon Q has moved to its own extension.' +
-                                            '\nInstall it to use Amazon Q, a generative AI assistant, with chat and code suggestions.',
-                                        'Install',
-                                        'Learn More'
-                                    )
-                                    .then(async resp => {
-                                        await telemetry.toolkit_invokeAction.run(async () => {
-                                            telemetry.record({
-                                                source: ExtensionUse.instance.isFirstUse()
-                                                    ? ExtStartUpSources.firstStartUp
-                                                    : ExtStartUpSources.none,
-                                            })
-
-                                            if (resp === 'Learn More') {
-                                                // Clicking learn more will open the q extension page
-                                                telemetry.record({ action: 'learnMore' })
-                                                await qExtensionPageCommand.execute()
-                                                return
-                                            }
-
-                                            if (resp === 'Install') {
-                                                telemetry.record({ action: 'installAmazonQ' })
-                                                await installAmazonQExtension.execute()
-                                            } else {
-                                                telemetry.record({ action: 'dismissQNotification' })
-                                            }
-
-                                            await globals.context.globalState.update(amazonQInstallDismissedKey, true)
-                                        })
-                                    })
-                            }
-                        }
-                    })
-                }
+                await handleAmazonQInstall()
             }
             await activateApplicationComposer(context)
+            await activateThreatComposerEditor(context)
         }
 
         await activateStepFunctions(context, globals.awsContext, globals.outputChannel)
@@ -231,7 +203,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         context.subscriptions.push(
             vscode.window.registerUriHandler({
-                handleUri: uri =>
+                handleUri: (uri) =>
                     telemetry.runRoot(() => {
                         telemetry.record({ source: 'UriHandler' })
 
@@ -273,8 +245,59 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export async function deactivate() {
-    await deactivateShared()
+    await deactivateCommon()
     await globals.resourceManager.dispose()
+}
+
+async function handleAmazonQInstall() {
+    const dismissedInstall = globals.globalState.get<boolean>('aws.toolkit.amazonqInstall.dismissed')
+    if (isExtensionInstalled(VSCODE_EXTENSION_ID.amazonq) || dismissedInstall) {
+        return
+    }
+
+    await telemetry.toolkit_showNotification.run(async () => {
+        if (isPreviousQUser()) {
+            await installAmazonQExtension.execute()
+            telemetry.record({ id: 'amazonQStandaloneInstalled' })
+            void vscode.window.showInformationMessage(
+                "Amazon Q is now its own extension.\n\nWe've auto-installed it for you with all the same features and settings from CodeWhisperer and Amazon Q chat."
+            )
+            await globals.globalState.update('aws.toolkit.amazonqInstall.dismissed', true)
+        } else {
+            telemetry.record({ id: 'amazonQStandaloneChange' })
+            void vscode.window
+                .showInformationMessage(
+                    'Amazon Q has moved to its own extension.' +
+                        '\nInstall it to use Amazon Q, a generative AI assistant, with chat and code suggestions.',
+                    'Install',
+                    'Learn More'
+                )
+                .then(async (resp) => {
+                    await telemetry.toolkit_invokeAction.run(async () => {
+                        telemetry.record({
+                            source: ExtensionUse.instance.isFirstUse()
+                                ? ExtStartUpSources.firstStartUp
+                                : ExtStartUpSources.none,
+                        })
+
+                        if (resp === 'Learn More') {
+                            // Clicking learn more will open the q extension page
+                            telemetry.record({ action: 'learnMore' })
+                            await qExtensionPageCommand.execute()
+                            return
+                        }
+
+                        if (resp === 'Install') {
+                            telemetry.record({ action: 'installAmazonQ' })
+                            await installAmazonQExtension.execute()
+                        } else {
+                            telemetry.record({ action: 'dismissQNotification' })
+                        }
+                        await globals.globalState.update('aws.toolkit.amazonqInstall.dismissed', true)
+                    })
+                })
+        }
+    })
 }
 
 function initializeCredentialsProviderManager() {

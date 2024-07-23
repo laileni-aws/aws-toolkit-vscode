@@ -24,6 +24,21 @@ export interface SessionStateInteraction {
     interaction: Interaction
 }
 
+export enum DevPhase {
+    INIT = 'Init',
+    APPROACH = 'Approach',
+    CODEGEN = 'Codegen',
+}
+
+export enum CodeGenerationStatus {
+    COMPLETE = 'Complete',
+    PREDICT_READY = 'predict-ready',
+    IN_PROGRESS = 'InProgress',
+    PREDICT_FAILED = 'predict-failed',
+    DEBATE_FAILED = 'debate-failed',
+    FAILED = 'Failed',
+}
+
 export enum FollowUpTypes {
     GenerateCode = 'GenerateCode',
     InsertCode = 'InsertCode',
@@ -36,7 +51,7 @@ export enum FollowUpTypes {
     SendFeedback = 'SendFeedback',
 }
 
-export type SessionStatePhase = 'Init' | 'Approach' | 'Codegen'
+export type SessionStatePhase = DevPhase.INIT | DevPhase.APPROACH | DevPhase.CODEGEN
 
 export type CurrentWsFolders = [vscode.WorkspaceFolder, ...vscode.WorkspaceFolder[]]
 
@@ -51,6 +66,8 @@ export interface SessionState {
     readonly tabID: string
     interact(action: SessionStateAction): Promise<SessionStateInteraction>
     updateWorkspaceRoot?: (workspaceRoot: string) => void
+    codeGenerationRemainingIterationCount?: number
+    codeGenerationTotalIterationCount?: number
 }
 
 export interface SessionStateConfig {
