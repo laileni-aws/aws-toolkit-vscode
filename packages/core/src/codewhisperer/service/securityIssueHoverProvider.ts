@@ -88,6 +88,15 @@ export class SecurityIssueHoverProvider extends SecurityIssueProvider implements
             'Explain with Amazon Q'
         )
         markdownString.appendMarkdown(' | ' + explainWithQCommand)
+        //TODO
+        const suppressIssueCommand = this._getCommandMarkdown(
+            'aws.amazonq.suppressIssue',
+            [issue],
+            'comment',
+            'Suppress Issue',
+            'Suppress Issue with Amazon Q'
+        )
+        markdownString.appendMarkdown(' | ' + suppressIssueCommand)
 
         if (suggestedFix) {
             const applyFixCommand = this._getCommandMarkdown(

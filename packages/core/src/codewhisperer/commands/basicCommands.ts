@@ -285,6 +285,14 @@ export const openSecurityIssuePanel = Commands.declare(
     }
 )
 
+export const suppressIssue = Commands.declare(
+    'aws.amazonq.suppressIssue',
+    (context: ExtContext) => async (issue: CodeScanIssue, filePath: string) => {
+        // let issueData=issue
+        void vscode.window.setStatusBarMessage(`Issue ${issue.findingId} is Suppressed`)
+    }
+)
+
 export const notifyNewCustomizationsCmd = Commands.declare(
     { id: 'aws.amazonq.notifyNewCustomizations', logging: false },
     () => () => {

@@ -42,6 +42,12 @@ export class SecurityIssueWebview extends VueWebview {
             void vscode.commands.executeCommand('aws.amazonq.explainIssue', ...args)
         })
     }
+    public suppressIssueWithQ() {
+        const args = [this.issue]
+        void this.navigateToFile()?.then(() => {
+            void vscode.commands.executeCommand('aws.amazonq.suppressIssue', ...args)
+        })
+    }
 
     public getRelativePath() {
         if (this.filePath) {

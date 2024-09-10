@@ -68,6 +68,18 @@ export class SecurityIssueCodeActionProvider extends SecurityIssueProvider imple
                         arguments: explainWithQArgs,
                     }
                     codeActions.push(explainWithQ)
+
+                    const suppressIssueWithQ = new vscode.CodeAction(
+                        `Amazon Q: Suppress Issue "${issue.title}"`,
+                        vscode.CodeActionKind.QuickFix
+                    )
+                    const suppressIssueWithQArgs = [issue]
+                    suppressIssueWithQ.command = {
+                        title: 'Suppress Issue with Amazon Q',
+                        command: 'aws.amazonq.suppressIssue',
+                        arguments: suppressIssueWithQArgs,
+                    }
+                    codeActions.push(suppressIssueWithQ)
                 }
             }
         }

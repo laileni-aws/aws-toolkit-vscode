@@ -5,6 +5,7 @@
         <div class="container button-container" style="justify-content: space-between">
             <h1>{{ title }} <img class="severity" :src="severityImage" :alt="severity" /></h1>
             <input v-if="isFixAvailable" class="mt-4 ml-16" type="submit" @click="applyFix" value="Fix" />
+            <input class="mt-4 ml-16" type="submit" @click="suppressIssue" value="Suppress Issue" />
         </div>
 
         <div class="mt-16">
@@ -171,6 +172,9 @@ export default defineComponent({
         },
         navigateToFile() {
             client.navigateToFile()
+        },
+        suppressIssue() {
+            client.suppressIssueWithQ()
         },
     },
     computed: {

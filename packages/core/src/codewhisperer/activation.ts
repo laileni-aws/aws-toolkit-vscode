@@ -41,6 +41,7 @@ import {
     signoutCodeWhisperer,
     toggleCodeScans,
     registerToolkitApiCallback,
+    suppressIssue,
 } from './commands/basicCommands'
 import { sleep } from '../shared/utilities/timeoutUtils'
 import { ReferenceLogViewProvider } from './service/referenceLogViewProvider'
@@ -222,6 +223,8 @@ export async function activate(context: ExtContext): Promise<void> {
         showSecurityScan.register(context, securityPanelViewProvider, client),
         // show security issue webview panel
         openSecurityIssuePanel.register(context),
+        //Suppress Issue
+        suppressIssue.register(context),
         // sign in with sso or AWS ID
         showSsoSignIn.register(),
         // show reconnect prompt
