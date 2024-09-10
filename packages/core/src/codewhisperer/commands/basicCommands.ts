@@ -352,44 +352,43 @@ TODO:
 export const generateSecurityFix = Commands.declare(
     'aws.amazonq.generateSecurityFix',
     () => async (issue: CodeScanIssue, filePath: string, source: Component) => {
-        /* Working
+        /* Working */
         return vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
                 // title: CodeWhispererConstants.runningSecurityScan,
-                title: "Generating security fix...",
+                title: 'Generating security fix...',
                 cancellable: false,
             },
             async () => {
-                const uri = vscode.Uri.file(filePath);
+                const uri = vscode.Uri.file(filePath)
 
                 try {
-                    const originalDoc = await vscode.workspace.openTextDocument(uri);
-                    const originalCode = originalDoc.getText();
+                    const originalDoc = await vscode.workspace.openTextDocument(uri)
+                    const originalCode = originalDoc.getText()
 
-                    const originalTempUri = vscode.Uri.parse(`${uri.fsPath}`);
-                    const changedTempUri = vscode.Uri.parse(`untitled:changed_${uri.fsPath}`);
-              
-                    await vscode.workspace.openTextDocument(changedTempUri).then(async doc => {
-                      const edit = new vscode.WorkspaceEdit();
-                      edit.insert(changedTempUri, new vscode.Position(0, 0), originalCode.toUpperCase());
-                      const success = await vscode.workspace.applyEdit(edit)
-                    });
+                    const originalTempUri = vscode.Uri.parse(`${uri.fsPath}`)
+                    const changedTempUri = vscode.Uri.parse(`untitled:changed_${uri.fsPath}`)
+
+                    await vscode.workspace.openTextDocument(changedTempUri).then(async (doc) => {
+                        const edit = new vscode.WorkspaceEdit()
+                        edit.insert(changedTempUri, new vscode.Position(0, 0), originalCode.toUpperCase())
+                        const success = await vscode.workspace.applyEdit(edit)
+                    })
                     await vscode.commands.executeCommand(
                         'vscode.diff',
                         originalTempUri,
                         changedTempUri,
                         `Diff: ${uri.fsPath}`
-                      );
-
-                    } catch (error) {
-                        vscode.window.showErrorMessage(`Failed to show diff: ${error.message}`);
-                      }
+                    )
+                } catch (error) {
+                    vscode.window.showErrorMessage(`Failed to show diff: ${error.message}`)
+                }
             }
         )
         // void vscode.window.showInformationMessage(`Generating security fix...`)
-        */
 
+        /*
         return vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
@@ -467,7 +466,7 @@ export const generateSecurityFix = Commands.declare(
                     vscode.window.showErrorMessage(`Failed to show diff: ${error.message}`)
                 }
             }
-        )
+        )*/
     }
 )
 
