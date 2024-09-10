@@ -64,6 +64,7 @@ function registerApps(appInitContext: amazonq.AmazonQAppInitContext) {
     amazonq.cwChatAppInit(appInitContext)
     amazonq.featureDevChatAppInit(appInitContext)
     amazonq.gumbyChatAppInit(appInitContext)
+    amazonq.scanChatAppInit(appInitContext)
 }
 
 /**

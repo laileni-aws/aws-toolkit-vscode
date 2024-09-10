@@ -5,20 +5,19 @@
 
 import { MessageListener } from '../../../../amazonq/messages/messageListener'
 import { ExtensionMessage } from '../../../../amazonq/webview/ui/commands'
-import { ChatControllerEventEmitters } from '../../controller/controller'
+import { ScanChatControllerEventEmitters } from '../../controller/controller'
 // import * as vscode from 'vscode'
-
 type UIMessage = ExtensionMessage & {
     tabID?: string
 }
 
 export interface UIMessageListenerProps {
-    readonly chatControllerEventEmitters: ChatControllerEventEmitters
+    readonly chatControllerEventEmitters: ScanChatControllerEventEmitters
     readonly webViewMessageListener: MessageListener<any>
 }
 
 export class UIMessageListener {
-    private gumbyControllerEventsEmitters: ChatControllerEventEmitters | undefined
+    private gumbyControllerEventsEmitters: ScanChatControllerEventEmitters | undefined
     private webViewMessageListener: MessageListener<any>
 
     constructor(props: UIMessageListenerProps) {
@@ -33,7 +32,7 @@ export class UIMessageListener {
 
     private handleMessage(msg: ExtensionMessage) {
         switch (msg.command) {
-            case 'transform':
+            case 'scan':
                 this.transform(msg)
                 break
             case 'new-tab-was-created':
@@ -65,7 +64,6 @@ export class UIMessageListener {
     }
 
     private transform(msg: UIMessage) {
-        // void vscode.window.setStatusBarMessage('Got to Gumby side')
         this.gumbyControllerEventsEmitters?.transformSelected.fire({
             tabID: msg.tabID,
         })

@@ -16,6 +16,7 @@ import {
 import { References } from '../client/codewhisperer'
 import globals from '../../shared/extensionGlobals'
 import { ChatControllerEventEmitters } from '../../amazonqGumby/chat/controller/controller'
+import { ScanChatControllerEventEmitters } from '../../amazonqScans/chat/controller/controller'
 import { TransformationSteps } from '../client/codewhispereruserclient'
 
 // unavoidable global variables
@@ -217,6 +218,8 @@ export class CodeScanState {
     // Define a constructor for this class
     private codeScanState: CodeScanStatus = CodeScanStatus.NotStarted
 
+    private chatControllers: ScanChatControllerEventEmitters | undefined = undefined
+
     public isNotStarted() {
         return this.codeScanState === CodeScanStatus.NotStarted
     }
@@ -241,6 +244,10 @@ export class CodeScanState {
         this.codeScanState = CodeScanStatus.Running
     }
 
+    public setChatControllers(controllers: ScanChatControllerEventEmitters) {
+        this.chatControllers = controllers
+    }
+
     public getPrefixTextForButton() {
         switch (this.codeScanState) {
             case CodeScanStatus.NotStarted:
@@ -261,6 +268,10 @@ export class CodeScanState {
             case CodeScanStatus.Cancelling:
                 return getIcon('vscode-icons:loading~spin')
         }
+    }
+
+    public getChatControllers() {
+        return this.chatControllers
     }
 }
 

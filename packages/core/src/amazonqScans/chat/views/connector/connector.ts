@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { gumbyChat } from '../../../models/constants' //TODO
+import { gumbyChat } from '../../../models/constants'
 import { AuthFollowUpType } from '../../../../amazonq/auth/model'
 import { MessagePublisher } from '../../../../amazonq/messages/messagePublisher'
 import { ChatItemButton, ChatItemFormItem } from '@aws/mynah-ui/dist/static'
-import { GumbyCommands } from '../../controller/messenger/messengerUtils' //TODO
+import { GumbyCommands } from '../../controller/messenger/messengerUtils'
 import { ChatItemType } from '../../../../amazonq/commons/model'
 
 export type GumbyMessageType =

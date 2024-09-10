@@ -40,6 +40,10 @@ export class QuickActionGenerator {
                                   command: '/transform',
                                   description: 'Transform your Java 8 or 11 Maven project to Java 17',
                               },
+                              {
+                                  command: '/scan',
+                                  description: 'Identify and fix code issues before committing',
+                              },
                           ]
                         : []),
                 ],
@@ -76,6 +80,10 @@ export class QuickActionGenerator {
             gumby: {
                 description: "This command isn't available in /transform",
                 unavailableItems: ['/dev', '/transform'],
+            },
+            scan: {
+                description: "This command isn't available in /scan",
+                unavailableItems: ['/dev', '/scan'],
             },
             unknown: {
                 description: '',

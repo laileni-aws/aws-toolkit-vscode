@@ -49,6 +49,9 @@ export class QuickActionHandler {
             case '/transform':
                 this.handleGumbyCommand(tabID, eventId)
                 break
+            case '/scan':
+                this.handleScanCommand(tabID, eventId)
+                break
             case '/clear':
                 this.handleClearCommand(tabID)
                 break
@@ -106,6 +109,60 @@ export class QuickActionHandler {
             })
 
             this.connector.transform(affectedTabId)
+        }
+    }
+
+    private handleScanCommand(tabID: string, eventId: string | undefined) {
+        // if (!this.isGumbyEnabled) {
+        //     return
+        // }
+
+        let gumbyTabId: string | undefined = undefined
+
+        this.tabsStorage.getTabs().forEach((tab) => {
+            if (tab.type === 'scan') {
+                gumbyTabId = tab.id
+            }
+        })
+
+        if (gumbyTabId !== undefined) {
+            this.mynahUI.selectTab(gumbyTabId, eventId || '')
+            this.connector.onTabChange(gumbyTabId)
+            return
+        }
+
+        let affectedTabId: string | undefined = tabID
+        // if there is no gumby tab, open a new one
+        if (this.tabsStorage.getTab(affectedTabId)?.type !== 'unknown') {
+            affectedTabId = this.mynahUI.updateStore('', {
+                loadingChat: true,
+            })
+        }
+
+        if (affectedTabId === undefined) {
+            this.mynahUI.notify({
+                content: uiComponentsTexts.noMoreTabsTooltip,
+                type: NotificationType.WARNING,
+            })
+            return
+        } else {
+            this.tabsStorage.updateTabTypeFromUnknown(affectedTabId, 'scan')
+            this.connector.onKnownTabOpen(affectedTabId)
+            this.connector.onUpdateTabType(affectedTabId)
+
+            // reset chat history
+            this.mynahUI.updateStore(affectedTabId, {
+                chatItems: [],
+            })
+
+            this.mynahUI.updateStore(affectedTabId, this.tabDataGenerator.getTabData('scan', true, undefined)) // creating a new tab and printing some title
+
+            // disable chat prompt
+            this.mynahUI.updateStore(affectedTabId, {
+                loadingChat: true,
+            })
+
+            this.connector.transformScans(affectedTabId)
         }
     }
 

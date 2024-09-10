@@ -31,5 +31,6 @@ type MessageCommand =
     | 'file-click'
     | 'form-action-click'
     | 'open-settings'
+    | 'scan'
 
 export type ExtensionMessage = Record<string, any> & { command: MessageCommand }

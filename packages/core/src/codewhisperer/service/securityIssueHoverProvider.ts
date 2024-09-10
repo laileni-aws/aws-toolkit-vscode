@@ -68,7 +68,7 @@ export class SecurityIssueHoverProvider extends SecurityIssueProvider implements
 
         const [suggestedFix] = issue.suggestedFixes
 
-        markdownString.appendMarkdown(`## ${issue.title} ${this._makeSeverityBadge(issue.severity)}\n`)
+        markdownString.appendMarkdown(`## Amazon Q: ${issue.title} ${this._makeSeverityBadge(issue.severity)}\n`)
         markdownString.appendMarkdown(`${suggestedFix ? suggestedFix.description : issue.recommendation.text}\n\n`)
 
         const viewDetailsCommand = this._getCommandMarkdown(

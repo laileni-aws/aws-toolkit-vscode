@@ -105,7 +105,7 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
                         body: 'Authentication successful. Connected to Amazon Q.',
                     })
 
-                    if (tabsStorage.getTab(tabID)?.type === 'gumby') {
+                    if (tabsStorage.getTab(tabID)?.type === 'gumby' || tabsStorage.getTab(tabID)?.type === 'scan') {
                         mynahUI.updateStore(tabID, {
                             promptInputDisabledState: false,
                         })
@@ -119,6 +119,8 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
                 quickActionHandler.handle({ command: '/transform' }, tabID, eventId)
             } else if (command === 'aws.awsq.clearchat') {
                 quickActionHandler.handle({ command: '/clear' }, tabID)
+            } else if (command === 'aws.awsq.scan') {
+                quickActionHandler.handle({ command: '/scan' }, tabID)
             }
         },
         onCWCContextCommandMessage: (message: ChatItem, command?: string): string | undefined => {
@@ -372,6 +374,11 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
                     type: ChatItemType.ANSWER_STREAM,
                 })
             } else if (tabsStorage.getTab(tabID)?.type === 'gumby') {
+                connector.requestAnswer(tabID, {
+                    chatMessage: prompt.prompt ?? '',
+                })
+                return
+            } else if (tabsStorage.getTab(tabID)?.type === 'scan') {
                 connector.requestAnswer(tabID, {
                     chatMessage: prompt.prompt ?? '',
                 })

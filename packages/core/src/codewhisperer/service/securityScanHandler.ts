@@ -264,9 +264,12 @@ export function throwIfCancelled(scope: CodeWhispererConstants.CodeAnalysisScope
         case CodeWhispererConstants.CodeAnalysisScope.FILE: {
             const latestCodeScanStartTime = CodeScansState.instance.getLatestScanTime()
             if (
-                !CodeScansState.instance.isScansEnabled() ||
-                (latestCodeScanStartTime && latestCodeScanStartTime > codeScanStartTime)
+                // !CodeScansState.instance.isScansEnabled() ||
+                // (latestCodeScanStartTime && latestCodeScanStartTime > codeScanStartTime)
+                latestCodeScanStartTime &&
+                latestCodeScanStartTime > codeScanStartTime
             ) {
+                getLogger().warn(`Reached here: ${scope}`)
                 throw new CodeScanStoppedError()
             }
             break

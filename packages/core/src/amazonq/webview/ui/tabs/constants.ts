@@ -37,4 +37,11 @@ To get started, describe the task you are trying to accomplish.`,
 
 I can help you upgrade your Java 8 and 11 codebases to Java 17.`,
     },
+    scan: {
+        title: 'Q - Security Scans',
+        placeholder: 'Open a new tab to chat with Q',
+        welcome: `Welcome to Q Security Scans!
+
+I can help you Security Scans`,
+    },
 }

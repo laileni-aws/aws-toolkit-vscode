@@ -9,7 +9,7 @@ import { ExtContext, VSCODE_EXTENSION_ID } from '../../shared/extensions'
 import { Commands, VsCodeCommandArg, placeholder } from '../../shared/vscode/commands2'
 import * as CodeWhispererConstants from '../models/constants'
 import { DefaultCodeWhispererClient } from '../client/codewhisperer'
-import { startSecurityScanWithProgress, confirmStopSecurityScan } from './startSecurityScan'
+import { startSecurityScanWithProgress, confirmStopSecurityScan, debounceStartSecurityScan } from './startSecurityScan'
 import { SecurityPanelViewProvider } from '../views/securityPanelViewProvider'
 import { CodeScanIssue, CodeScansState, codeScanState, CodeSuggestionsState, vsCodeState } from '../models/model'
 import { connectToEnterpriseSso, getStartUrl } from '../util/getStartUrl'
@@ -90,6 +90,7 @@ export const enableCodeSuggestions = Commands.declare(
 export const toggleCodeScans = Commands.declare(
     { id: 'aws.codeWhisperer.toggleCodeScan', compositeKey: { 1: 'source' } },
     (scansState: CodeScansState) => async (_: VsCodeCommandArg, source: CodeWhispererSource) => {
+        void vscode.window.setStatusBarMessage('Came to toggleCodeScans')
         await telemetry.aws_modifySetting.run(async (span) => {
             if (isBuilderIdConnection(AuthUtil.instance.conn)) {
                 throw new Error(`Auto-scans are not supported with the Amazon Builder ID connection.`)
@@ -147,6 +148,22 @@ export const showSecurityScan = Commands.declare(
                 await confirmStopSecurityScan()
             }
             vsCodeState.isFreeTierLimitReached = false
+        }
+)
+
+export const showAutoScan = Commands.declare(
+    { id: 'aws.amazonq.security.autoscan', compositeKey: { 1: 'source' } },
+    (context: ExtContext, securityPanelViewProvider: SecurityPanelViewProvider, client: DefaultCodeWhispererClient) =>
+        async (_: VsCodeCommandArg, source: CodeWhispererSource) => {
+            void vscode.window.setStatusBarMessage('Running the AutoScan')
+            const editor = vscode.window.activeTextEditor
+            void debounceStartSecurityScan(
+                securityPanelViewProvider,
+                editor,
+                client,
+                context.extensionContext,
+                CodeWhispererConstants.CodeAnalysisScope.FILE
+            )
         }
 )
 

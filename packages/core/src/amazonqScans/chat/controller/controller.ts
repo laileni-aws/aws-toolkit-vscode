@@ -30,7 +30,12 @@ import {
     validateCanCompileProject,
     setMaven,
 } from '../../../codewhisperer/commands/startTransformByQ'
-import { JDKVersion, TransformationCandidateProject, transformByQState } from '../../../codewhisperer/models/model'
+import {
+    AggregatedCodeScanIssue,
+    JDKVersion,
+    TransformationCandidateProject,
+    transformByQState,
+} from '../../../codewhisperer/models/model'
 import {
     AbsolutePathDetectedError,
     AlternateDependencyVersionsNotFoundError,
@@ -57,10 +62,16 @@ import DependencyVersions from '../../models/dependencies'
 import { getStringHash } from '../../../shared/utilities/textUtilities'
 import { getTelemetryReasonDesc } from '../../../shared/errors'
 import { getVersionData } from '../../../codewhisperer/service/transformByQ/transformMavenHandler'
+import { showAutoScan, showSecurityScan, toggleCodeScans } from '../../../codewhisperer/commands/basicCommands'
+import { placeholder } from '../../../shared/vscode/commands2'
+import { cwQuickPickSource } from '../../../codewhisperer/commands/types'
+import { i18n } from '../../../shared/i18n-helper'
+import { createAutoScans } from '../../../codewhisperer/ui/codeWhispererNodes'
+import { debounceStartSecurityScan } from '../../../codewhisperer/commands/startSecurityScan'
 
 // These events can be interactions within the chat,
 // or elsewhere in the IDE
-export interface ChatControllerEventEmitters {
+export interface ScanChatControllerEventEmitters {
     readonly transformSelected: vscode.EventEmitter<any>
     readonly tabOpened: vscode.EventEmitter<any>
     readonly tabClosed: vscode.EventEmitter<any>
@@ -74,6 +85,7 @@ export interface ChatControllerEventEmitters {
     readonly humanInTheLoopPromptUserForDependency: vscode.EventEmitter<any>
     readonly humanInTheLoopSelectionUploaded: vscode.EventEmitter<any>
     readonly errorThrown: vscode.EventEmitter<any>
+    readonly showSecurityScan: vscode.EventEmitter<any>
 }
 
 export class GumbyController {
@@ -82,14 +94,13 @@ export class GumbyController {
     private authController: AuthController
 
     public constructor(
-        private readonly chatControllerMessageListeners: ChatControllerEventEmitters,
+        private readonly chatControllerMessageListeners: ScanChatControllerEventEmitters,
         messenger: Messenger,
         onDidChangeAmazonQVisibility: vscode.Event<boolean>
     ) {
         this.messenger = messenger
         this.sessionStorage = ChatSessionManager.Instance
         this.authController = new AuthController()
-
         this.chatControllerMessageListeners.transformSelected.event((data) => {
             return this.transformInitiated(data)
         })
@@ -111,6 +122,7 @@ export class GumbyController {
         })
 
         this.chatControllerMessageListeners.formActionClicked.event((data) => {
+            void vscode.window.setStatusBarMessage('Running Project scan SCAN')
             return this.formActionClicked(data)
         })
 
@@ -140,6 +152,10 @@ export class GumbyController {
 
         this.chatControllerMessageListeners.errorThrown.event((data) => {
             return this.handleError(data)
+        })
+
+        this.chatControllerMessageListeners.showSecurityScan.event((data) => {
+            return this.handleScanResults(data)
         })
     }
 
@@ -234,13 +250,18 @@ export class GumbyController {
                         this.messenger.sendCompilationInProgress(message.tabID)
                         return
                 }
-                this.messenger.sendTransformationIntroduction(message.tabID)
+                void vscode.window.setStatusBarMessage('This is Scan Side only')
+
+                // this.messenger.sendSecurityScans(message.tabID) //TODO
+                this.messenger.sendScans(message.tabID, 'Choose Scan Type')
+                // this.messenger.sendTransformationIntroduction(message.tabID)
             })
         } catch (e: any) {
             // if there was an issue getting the list of valid projects, the error message will be shown here
             this.messenger.sendErrorMessage(e.message, message.tabID)
         }
-
+        /*
+ //TODO Here
         try {
             const validProjects = await this.validateProjectsWithReplyOnError(message)
             if (validProjects.length > 0) {
@@ -251,6 +272,7 @@ export class GumbyController {
             // if there was an issue getting the list of valid projects, the error message will be shown here
             this.messenger.sendErrorMessage(err.message, message.tabID)
         }
+        */
     }
 
     private async validateProjectsWithReplyOnError(message: any): Promise<TransformationCandidateProject[]> {
@@ -291,14 +313,14 @@ export class GumbyController {
             err = e
         } finally {
             // TODO: remove deprecated metric once BI started using new metrics
-            telemetry.codeTransform_projectDetails.emit({
-                passive: true,
-                codeTransformSessionId: CodeTransformTelemetryState.instance.getSessionId(),
-                codeTransformLocalJavaVersion: telemetryJavaVersion,
-                result: err?.code ? MetadataResult.Fail : MetadataResult.Pass,
-                reason: err?.code,
-                reasonDesc: getTelemetryReasonDesc(err),
-            })
+            // telemetry.codeTransform_projectDetails.emit({
+            //     passive: true,
+            //     codeTransformSessionId: CodeTransformTelemetryState.instance.getSessionId(),
+            //     codeTransformLocalJavaVersion: telemetryJavaVersion,
+            //     result: err?.code ? MetadataResult.Fail : MetadataResult.Pass,
+            //     reason: err?.code,
+            //     reasonDesc: getTelemetryReasonDesc(err),
+            // })
         }
         return []
     }
@@ -326,11 +348,34 @@ export class GumbyController {
                 await postTransformationJob()
                 await cleanupTransformationJob()
                 break
+            case ButtonActions.RUN_PROJECT_SCAN:
+                void vscode.window.setStatusBarMessage('Running Project scan')
+                await showSecurityScan.execute(placeholder, cwQuickPickSource)
+                this.messenger.sendAnswer({
+                    type: 'answer-stream',
+                    tabID: message.tabID,
+                    message: i18n('AWS.amazonq.scans.runProjectScans'),
+                })
+                this.messenger.sendUpdatePlaceholder(message.tabID, 'Running a Security scan ...') // AWS.amazonq.featureDev.answer.approachCreation
+                // await this.transformInitiated(message)
+                break
             case ButtonActions.CONFIRM_START_TRANSFORMATION_FLOW:
-                void vscode.window.setStatusBarMessage('Running Project scan Gumby')
-                this.resetTransformationChatFlow()
-                this.messenger.sendCommandMessage({ ...message, command: GumbyCommands.CLEAR_CHAT })
-                await this.transformInitiated(message)
+                void vscode.window.setStatusBarMessage('Running File scan')
+                this.messenger.sendAnswer({
+                    type: 'answer-stream',
+                    tabID: message.tabID,
+                    message: i18n('AWS.amazonq.scans.runProjectScans'),
+                })
+                this.messenger.sendUpdatePlaceholder(
+                    message.tabID,
+                    'Running a Security scan on current active file ...'
+                ) // AWS.amazonq.featureDev.answer.approachCreation
+                showAutoScan.execute(placeholder, cwQuickPickSource)
+                // toggleCodeScans.execute(placeholder, cwQuickPickSource)
+                // await this.transformInitiated(message)
+                // this.resetTransformationChatFlow()
+                // this.messenger.sendCommandMessage({ ...message, command: GumbyCommands.CLEAR_CHAT })
+                // await this.transformInitiated(message)
                 break
             case ButtonActions.CONFIRM_DEPENDENCY_FORM:
                 await this.continueJobWithSelectedDependency(message)
@@ -538,6 +583,20 @@ export class GumbyController {
         } else if (message.error instanceof AbsolutePathDetectedError) {
             this.messenger.sendKnownErrorResponse(message.tabID, message.error.message)
         }
+    }
+
+    private async handleScanResults(message: {
+        error: Error
+        totalIssues: number
+        tabID: string
+        securityRecommendationCollection: AggregatedCodeScanIssue[]
+    }) {
+        void vscode.window.setStatusBarMessage('Came back to Q chat')
+        // this.resetTransformationChatFlow()
+        this.messenger.sendCommandMessage({ ...message, command: GumbyCommands.CLEAR_CHAT })
+        this.messenger.sendScanResults(message.tabID, message.totalIssues, message.securityRecommendationCollection) // Todo add issue addon args
+        this.messenger.sendScans(message.tabID, 'Choose the type of Scan')
+        this.messenger.sendUpdatePlaceholder(message.tabID, `Choose the type of Scan...`)
     }
 
     private async continueTransformationWithoutHIL(message: { tabID: string }) {
