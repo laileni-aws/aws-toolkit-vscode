@@ -91,7 +91,7 @@ export class SecurityIssueHoverProvider extends SecurityIssueProvider implements
         //TODO
         const suppressIssueCommand = this._getCommandMarkdown(
             'aws.amazonq.suppressIssue',
-            [issue],
+            [issue, filePath],
             'comment',
             'Suppress Issue',
             'Suppress Issue with Amazon Q'

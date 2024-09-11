@@ -6,6 +6,7 @@
 import { DefaultCodeWhispererClient } from '../client/codewhisperer'
 import { getLogger } from '../../shared/logger'
 import * as vscode from 'vscode'
+import * as fs from 'fs'
 import {
     AggregatedCodeScanIssue,
     CodeScanIssue,
@@ -39,6 +40,22 @@ import {
     UploadArtifactToS3Error,
 } from '../models/errors'
 import { getTelemetryReasonDesc } from '../../shared/errors'
+async function getSuppressedIssues(projectPath: string): Promise<string[]> {
+    const hiddenFileName = '.suppressed_issues'
+    const hiddenFilePath = path.join(projectPath, hiddenFileName)
+
+    try {
+        if (fs.existsSync(hiddenFilePath)) {
+            const fileContent = await fs.promises.readFile(hiddenFilePath, 'utf-8')
+            return JSON.parse(fileContent)
+        }
+    } catch (error) {
+        // console.error('Error reading suppressed issues:', error)
+        void vscode.window.showErrorMessage(`Error reading suppressed issues: ${error}`)
+    }
+
+    return []
+}
 
 export async function listScanResults(
     client: DefaultCodeWhispererClient,
@@ -53,6 +70,9 @@ export async function listScanResults(
     const aggregatedCodeScanIssueList: AggregatedCodeScanIssue[] = []
     const requester = (request: codewhispererClient.ListCodeScanFindingsRequest) => client.listCodeScanFindings(request)
     const collection = pageableToCollection(requester, { jobId, codeScanFindingsSchema }, 'nextToken')
+
+    const suppressedIssues = await getSuppressedIssues(projectPaths[0])
+
     const issues = await collection
         .flatten()
         .map((resp) => {
@@ -74,11 +94,17 @@ export async function listScanResults(
             // Do not use .. in between because there could be multiple project paths in the same parent dir.
             const filePath = path.join(projectPath, key.split('/').slice(1).join('/'))
             if (existsSync(filePath) && statSync(filePath).isFile()) {
-                const aggregatedCodeScanIssue: AggregatedCodeScanIssue = {
-                    filePath: filePath,
-                    issues: issues.map(mapRawToCodeScanIssue),
+                const filteredIssues = issues
+                    .map(mapRawToCodeScanIssue)
+                    .filter((i) => !suppressedIssues.includes(i.title))
+
+                if (filteredIssues.length > 0) {
+                    const aggregatedCodeScanIssue: AggregatedCodeScanIssue = {
+                        filePath: filePath,
+                        issues: filteredIssues,
+                    }
+                    aggregatedCodeScanIssueList.push(aggregatedCodeScanIssue)
                 }
-                aggregatedCodeScanIssueList.push(aggregatedCodeScanIssue)
             }
         })
         const maybeAbsolutePath = `/${key}`

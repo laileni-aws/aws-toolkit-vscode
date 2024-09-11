@@ -4,6 +4,8 @@
  */
 
 import * as vscode from 'vscode'
+import * as fs from 'fs'
+import * as path from 'path'
 import { CodewhispererCodeScanIssueApplyFix, Component, telemetry } from '../../shared/telemetry/telemetry'
 import { ExtContext, VSCODE_EXTENSION_ID } from '../../shared/extensions'
 import { Commands, VsCodeCommandArg, placeholder } from '../../shared/vscode/commands2'
@@ -284,12 +286,51 @@ export const openSecurityIssuePanel = Commands.declare(
         )
     }
 )
-
+/* Working
 export const suppressIssue = Commands.declare(
     'aws.amazonq.suppressIssue',
     (context: ExtContext) => async (issue: CodeScanIssue, filePath: string) => {
         // let issueData=issue
-        void vscode.window.setStatusBarMessage(`Issue ${issue.findingId} is Suppressed`)
+        void vscode.window.setStatusBarMessage(`Issue ${issue.title} is Suppressed`)
+    }
+)
+*/
+
+//TODO: Remove the yellow line on all the findings with the same title as finding title of user suppressed.
+export const suppressIssue = Commands.declare(
+    'aws.amazonq.suppressIssue',
+    (context: ExtContext) => async (issue: CodeScanIssue, filePath: string) => {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0]
+        if (!workspaceFolder) {
+            void vscode.window.showErrorMessage('No workspace folder found.')
+            return
+        }
+        const hiddenFileName = '.suppressed_issues'
+        const hiddenFilePath = path.join(workspaceFolder.uri.fsPath, hiddenFileName)
+        const document = await vscode.workspace.openTextDocument(filePath)
+        try {
+            // Read existing content or create an empty array if file doesn't exist
+            let suppressedIssues: string[] = []
+            if (fs.existsSync(hiddenFilePath)) {
+                const fileContent = await fs.promises.readFile(hiddenFilePath, 'utf-8')
+                suppressedIssues = JSON.parse(fileContent)
+            }
+            // Add the new issue title if it's not already in the list
+            if (!suppressedIssues.includes(issue.title)) {
+                suppressedIssues.push(issue.title)
+                // Write the updated list back to the file
+                await fs.promises.writeFile(hiddenFilePath, JSON.stringify(suppressedIssues, undefined, 2))
+                void vscode.window.setStatusBarMessage(`Issue "${issue.title}" is suppressed`)
+                //Drop the finding from current file
+                removeDiagnostic(document.uri, issue)
+                SecurityIssueHoverProvider.instance.removeIssue(document.uri, issue)
+                SecurityIssueCodeActionProvider.instance.removeIssue(document.uri, issue)
+            } else {
+                void vscode.window.setStatusBarMessage(`Issue "${issue.title}" was already suppressed`)
+            }
+        } catch (error) {
+            void vscode.window.showErrorMessage(`Failed to suppress issue: ${error}`)
+        }
     }
 )
 
