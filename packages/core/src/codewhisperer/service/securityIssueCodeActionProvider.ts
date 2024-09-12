@@ -44,6 +44,18 @@ export class SecurityIssueCodeActionProvider extends SecurityIssueProvider imple
                             arguments: args,
                         }
                         codeActions.push(fixIssue)
+                    } else {
+                        const generatefixIssue = new vscode.CodeAction(
+                            `Amazon Q: Code Fix "${issue.title}"`,
+                            vscode.CodeActionKind.QuickFix
+                        )
+                        const args: [CodeScanIssue, string, Component] = [issue, group.filePath, 'quickfix']
+                        generatefixIssue.command = {
+                            title: 'Generate Fix with Amazon Q',
+                            command: 'aws.amazonq.generateSecurityFix',
+                            arguments: args,
+                        }
+                        codeActions.push(generatefixIssue)
                     }
                     const openIssue = new vscode.CodeAction(
                         `Amazon Q: View details for "${issue.title}"`,

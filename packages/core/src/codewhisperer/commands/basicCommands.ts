@@ -352,11 +352,9 @@ TODO:
 export const generateSecurityFix = Commands.declare(
     'aws.amazonq.generateSecurityFix',
     () => async (issue: CodeScanIssue, filePath: string, source: Component) => {
-        /* Working */
         return vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
-                // title: CodeWhispererConstants.runningSecurityScan,
                 title: 'Generating security fix...',
                 cancellable: false,
             },
@@ -366,107 +364,65 @@ export const generateSecurityFix = Commands.declare(
                 try {
                     const originalDoc = await vscode.workspace.openTextDocument(uri)
                     const originalCode = originalDoc.getText()
+                    const lines = originalCode.split('\n')
+
+                    // Convert only the lines from startLine to endLine to uppercase
+                    for (let i = issue.startLine - 1; i < issue.endLine; i++) {
+                        if (i >= 0 && i < lines.length) {
+                            lines[i] = lines[i].toUpperCase()
+                        }
+                    }
+
+                    const modifiedCode = lines.join('\n')
 
                     const originalTempUri = vscode.Uri.parse(`${uri.fsPath}`)
                     const changedTempUri = vscode.Uri.parse(`untitled:changed_${uri.fsPath}`)
 
                     await vscode.workspace.openTextDocument(changedTempUri).then(async (doc) => {
                         const edit = new vscode.WorkspaceEdit()
-                        edit.insert(changedTempUri, new vscode.Position(0, 0), originalCode.toUpperCase())
-                        const success = await vscode.workspace.applyEdit(edit)
+                        edit.insert(changedTempUri, new vscode.Position(0, 0), modifiedCode)
+                        await vscode.workspace.applyEdit(edit)
                     })
+
                     await vscode.commands.executeCommand(
                         'vscode.diff',
                         originalTempUri,
                         changedTempUri,
                         `Diff: ${uri.fsPath}`
                     )
+
+                    // Show accept/reject buttons
+                    const choice = await vscode.window.showInformationMessage(
+                        'Do you want to accept the changes?',
+                        { modal: false },
+                        'Accept',
+                        'Reject'
+                    )
+
+                    if (choice === 'Accept') {
+                        // Save changes to original file
+                        const edit = new vscode.WorkspaceEdit()
+                        edit.replace(uri, new vscode.Range(0, 0, originalDoc.lineCount, 0), modifiedCode)
+                        await vscode.workspace.applyEdit(edit)
+                        await originalDoc.save()
+                    }
+                    // Close the diff view
+                    await vscode.commands.executeCommand('workbench.action.closeActiveEditor')
+                    // Delete the temporary file
+                    try {
+                        await vscode.workspace.fs.delete(changedTempUri)
+                    } catch (error) {
+                        // console.error(`Failed to delete temporary file: ${error}`)
+                    }
+                    // Close and delete the diff view
+                    // await vscode.commands.executeCommand('workbench.action.closeAllEditors')
                 } catch (error) {
-                    vscode.window.showErrorMessage(`Failed to show diff: ${error.message}`)
+                    void vscode.window.showErrorMessage(`Failed to show diff: ${error}`)
                 }
             }
         )
+
         // void vscode.window.showInformationMessage(`Generating security fix...`)
-
-        /*
-        return vscode.window.withProgress(
-            {
-                location: vscode.ProgressLocation.Notification,
-                title: 'Generating security fix...',
-                cancellable: false,
-            },
-            async () => {
-                const uri = vscode.Uri.file(filePath)
-
-                try {
-                    const originalDoc = await vscode.workspace.openTextDocument(uri)
-                    const originalCode = originalDoc.getText()
-
-                    const originalTempUri = vscode.Uri.parse(`${uri.fsPath}`)
-                    const changedTempUri = vscode.Uri.parse(`untitled:changed_${uri.fsPath}`)
-
-                    await vscode.workspace.openTextDocument(changedTempUri).then(async (doc) => {
-                        const edit = new vscode.WorkspaceEdit()
-                        edit.insert(changedTempUri, new vscode.Position(0, 0), originalCode.toUpperCase())
-                        const success = await vscode.workspace.applyEdit(edit)
-                    })
-
-                    const diffResult = await vscode.commands.executeCommand(
-                        'vscode.diff',
-                        originalTempUri,
-                        changedTempUri,
-                        `Diff: ${uri.fsPath}`
-                    )
-
-                    // Prompt user to accept or ignore the changes
-                    const acceptChanges = 'Accept Changes'
-                    const ignoreChanges = 'Ignore Changes'
-
-                    const userChoice = await vscode.window.showInformationMessage(
-                        'Do you want to accept the changes?',
-                        { modal: true },
-                        acceptChanges,
-                        ignoreChanges
-                    )
-
-                    if (userChoice === acceptChanges) {
-                        // Apply changes to the original document
-                        const edit = new vscode.WorkspaceEdit()
-                        edit.replace(
-                            uri,
-                            new vscode.Range(
-                                new vscode.Position(0, 0),
-                                originalDoc.lineAt(originalDoc.lineCount - 1).range.end
-                            ),
-                            originalCode.toUpperCase()
-                        )
-                        const success = await vscode.workspace.applyEdit(edit)
-                        if (success) {
-                            await originalDoc.save()
-                            vscode.window.showInformationMessage('Changes applied successfully!')
-                        } else {
-                            vscode.window.showErrorMessage('Failed to apply changes.')
-                        }
-                    } else {
-                        vscode.window.showInformationMessage('Changes ignored.')
-                    }
-                    await vscode.commands.executeCommand('workbench.action.closeActiveEditor')
-                    const changedDoc = await vscode.workspace.openTextDocument(changedTempUri)
-                    const discardEdit = new vscode.WorkspaceEdit()
-                    discardEdit.replace(
-                        changedTempUri,
-                        new vscode.Range(
-                            new vscode.Position(0, 0),
-                            changedDoc.lineAt(changedDoc.lineCount - 1).range.end
-                        ),
-                        ''
-                    )
-                    await vscode.workspace.applyEdit(discardEdit)
-                } catch (error) {
-                    vscode.window.showErrorMessage(`Failed to show diff: ${error.message}`)
-                }
-            }
-        )*/
     }
 )
 

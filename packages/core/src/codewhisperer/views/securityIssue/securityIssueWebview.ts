@@ -36,6 +36,11 @@ export class SecurityIssueWebview extends VueWebview {
         void vscode.commands.executeCommand('aws.amazonq.applySecurityFix', ...args)
     }
 
+    public generateSecurityFix() {
+        const args: [CodeScanIssue | undefined, string | undefined, Component] = [this.issue, this.filePath, 'webview']
+        void vscode.commands.executeCommand('aws.amazonq.generateSecurityFix', ...args)
+    }
+
     public explainWithQ() {
         const args = [this.issue]
         void this.navigateToFile()?.then(() => {

@@ -5,6 +5,7 @@
         <div class="container button-container" style="justify-content: space-between">
             <h1>{{ title }} <img class="severity" :src="severityImage" :alt="severity" /></h1>
             <input v-if="isFixAvailable" class="mt-4 ml-16" type="submit" @click="applyFix" value="Fix" />
+            <input v-else class="mt-4 ml-16" type="submit" @click="generateSecurityFix" value="Code Fix" />
         </div>
 
         <div class="mt-16">
@@ -165,6 +166,9 @@ export default defineComponent({
         },
         applyFix() {
             client.applyFix()
+        },
+        generateSecurityFix() {
+            client.generateSecurityFix()
         },
         explainWithQ() {
             client.explainWithQ()
