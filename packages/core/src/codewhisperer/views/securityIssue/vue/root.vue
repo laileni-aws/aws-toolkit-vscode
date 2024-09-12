@@ -40,7 +40,8 @@
 
             <div>
                 <b>Detector library</b>
-                <p>
+                <p v-if="!detectorUrl || !detectorUrl.length">-</p>
+                <p v-else>
                     <a :href="detectorUrl">
                         {{ detectorName }} <span class="icon icon-sm icon-vscode-link-external"></span>
                     </a>
@@ -114,6 +115,7 @@ export default defineComponent({
             title: '',
             detectorId: '',
             detectorName: '',
+            detectorUrl: '',
             severity: '',
             recommendationText: '',
             suggestedFix: '',
@@ -141,6 +143,7 @@ export default defineComponent({
                 this.title = issue.title
                 this.detectorId = issue.detectorId
                 this.detectorName = issue.detectorName
+                this.detectorUrl = issue.recommendation.url
                 this.relatedVulnerabilities = issue.relatedVulnerabilities
                 this.severity = issue.severity
                 this.recommendationText = issue.recommendation.text
@@ -180,10 +183,6 @@ export default defineComponent({
     computed: {
         severityImage() {
             return severityImages[this.severity.toLowerCase()]
-        },
-        detectorUrl() {
-            const slug = this.detectorId.split('@').shift()
-            return `https://docs.aws.amazon.com/codeguru/detector-library/${slug}`
         },
         recommendationTextHtml() {
             return md.render(this.recommendationText)
