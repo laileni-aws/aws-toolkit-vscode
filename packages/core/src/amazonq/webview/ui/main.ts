@@ -56,7 +56,7 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
     let isFeatureDevEnabled = amazonQEnabled
 
     let isGumbyEnabled = amazonQEnabled
-
+    //TODO: Do we need similar for Scans?
     let tabDataGenerator = new TabDataGenerator({
         isFeatureDevEnabled,
         isGumbyEnabled,

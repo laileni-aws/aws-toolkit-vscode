@@ -88,7 +88,7 @@ export interface ScanChatControllerEventEmitters {
     readonly showSecurityScan: vscode.EventEmitter<any>
 }
 
-export class GumbyController {
+export class ScanController {
     private readonly messenger: Messenger
     private readonly sessionStorage: ChatSessionManager
     private authController: AuthController
@@ -122,7 +122,6 @@ export class GumbyController {
         })
 
         this.chatControllerMessageListeners.formActionClicked.event((data) => {
-            void vscode.window.setStatusBarMessage('Running Project scan SCAN')
             return this.formActionClicked(data)
         })
 
@@ -250,79 +249,14 @@ export class GumbyController {
                         this.messenger.sendCompilationInProgress(message.tabID)
                         return
                 }
-                void vscode.window.setStatusBarMessage('This is Scan Side only')
-
                 // this.messenger.sendSecurityScans(message.tabID) //TODO
-                this.messenger.sendScans(message.tabID, 'Choose Scan Type')
+                this.messenger.sendScans(message.tabID, 'Choose the type of Scan')
                 // this.messenger.sendTransformationIntroduction(message.tabID)
             })
         } catch (e: any) {
             // if there was an issue getting the list of valid projects, the error message will be shown here
             this.messenger.sendErrorMessage(e.message, message.tabID)
         }
-        /*
- //TODO Here
-        try {
-            const validProjects = await this.validateProjectsWithReplyOnError(message)
-            if (validProjects.length > 0) {
-                this.sessionStorage.getSession().updateCandidateProjects(validProjects)
-                await this.messenger.sendProjectPrompt(validProjects, message.tabID)
-            }
-        } catch (err: any) {
-            // if there was an issue getting the list of valid projects, the error message will be shown here
-            this.messenger.sendErrorMessage(err.message, message.tabID)
-        }
-        */
-    }
-
-    private async validateProjectsWithReplyOnError(message: any): Promise<TransformationCandidateProject[]> {
-        let telemetryJavaVersion = JDKToTelemetryValue(JDKVersion.UNSUPPORTED) as CodeTransformJavaSourceVersionsAllowed
-
-        let err
-        try {
-            const validProjects = await telemetry.codeTransform_validateProject.run(async () => {
-                telemetry.record({
-                    codeTransformBuildSystem: 'Maven', // default for Maven until we add undefined field to CodeTransformBuildSystem
-                    codeTransformSessionId: CodeTransformTelemetryState.instance.getSessionId(),
-                })
-
-                const validProjects = await getValidCandidateProjects()
-                if (validProjects.length > 0) {
-                    // validProjects[0].JDKVersion will be undefined if javap errors out or no .class files found, so call it UNSUPPORTED
-                    const javaVersion = validProjects[0].JDKVersion ?? JDKVersion.UNSUPPORTED
-                    telemetryJavaVersion = JDKToTelemetryValue(javaVersion) as CodeTransformJavaSourceVersionsAllowed
-                }
-                telemetry.record({ codeTransformLocalJavaVersion: telemetryJavaVersion })
-
-                await setMaven()
-                const versionInfo = await getVersionData()
-                const mavenVersionInfoMessage = `${versionInfo[0]} (${transformByQState.getMavenName()})`
-                telemetry.record({ buildSystemVersion: mavenVersionInfoMessage })
-
-                return validProjects
-            })
-            return validProjects
-        } catch (e: any) {
-            if (e instanceof NoJavaProjectsFoundError) {
-                this.messenger.sendUnrecoverableErrorResponse('no-java-project-found', message.tabID)
-            } else if (e instanceof NoMavenJavaProjectsFoundError) {
-                this.messenger.sendUnrecoverableErrorResponse('no-maven-java-project-found', message.tabID)
-            } else {
-                this.messenger.sendUnrecoverableErrorResponse('no-project-found', message.tabID)
-            }
-            err = e
-        } finally {
-            // TODO: remove deprecated metric once BI started using new metrics
-            // telemetry.codeTransform_projectDetails.emit({
-            //     passive: true,
-            //     codeTransformSessionId: CodeTransformTelemetryState.instance.getSessionId(),
-            //     codeTransformLocalJavaVersion: telemetryJavaVersion,
-            //     result: err?.code ? MetadataResult.Fail : MetadataResult.Pass,
-            //     reason: err?.code,
-            //     reasonDesc: getTelemetryReasonDesc(err),
-            // })
-        }
-        return []
     }
 
     private async formActionClicked(message: any) {

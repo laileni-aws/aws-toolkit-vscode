@@ -7,14 +7,14 @@ import * as vscode from 'vscode'
 import { AmazonQAppInitContext } from '../amazonq/apps/initContext'
 import { MessagePublisher } from '../amazonq/messages/messagePublisher'
 import { MessageListener } from '../amazonq/messages/messageListener'
-import { ScanChatControllerEventEmitters, GumbyController } from './chat/controller/controller'
+import { ScanChatControllerEventEmitters, ScanController } from './chat/controller/controller'
 import { AppToWebViewMessageDispatcher } from './chat/views/connector/connector'
 import { Messenger } from './chat/controller/messenger/messenger'
 import { UIMessageListener } from './chat/views/actions/uiMessageListener'
 import { debounce } from 'lodash'
 import { AuthUtil } from '../codewhisperer/util/authUtil'
 import { showTransformationHub } from './commands'
-import { codeScanState, transformByQState } from '../codewhisperer/models/model'
+import { codeScanState } from '../codewhisperer/models/model'
 import { ChatSessionManager } from './chat/storages/chatSession'
 
 export function init(appContext: AmazonQAppInitContext) {
@@ -37,7 +37,7 @@ export function init(appContext: AmazonQAppInitContext) {
     const dispatcher = new AppToWebViewMessageDispatcher(appContext.getAppsToWebViewMessagePublisher())
     const messenger = new Messenger(dispatcher)
 
-    new GumbyController(gumbyChatControllerEventEmitters, messenger, appContext.onDidChangeAmazonQVisibility.event)
+    new ScanController(gumbyChatControllerEventEmitters, messenger, appContext.onDidChangeAmazonQVisibility.event)
 
     const scanChatUIInputEventEmitter = new vscode.EventEmitter<any>()
 

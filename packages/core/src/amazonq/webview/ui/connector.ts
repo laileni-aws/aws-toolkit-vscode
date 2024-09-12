@@ -100,6 +100,7 @@ export class Connector {
                 break
             case 'gumby':
                 this.gumbyChatConnector.onResponseBodyLinkClick(tabID, messageId, link)
+                break
             case 'scan':
                 this.scanChatConnector.onResponseBodyLinkClick(tabID, messageId, link)
         }

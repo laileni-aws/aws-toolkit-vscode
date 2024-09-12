@@ -10,7 +10,7 @@
 import { ChatItem, ChatItemType } from '@aws/mynah-ui'
 import { ExtensionMessage } from '../commands'
 import { TabOpenType, TabsStorage } from '../storages/tabsStorage'
-import { GumbyMessageType } from '../../../../amazonqGumby/chat/views/connector/connector' //TODO
+import { ScanMessageType } from '../../../../amazonqScans/chat/views/connector/connector'
 import { ChatPayload } from '../connector'
 
 export interface ConnectorProps {
@@ -30,7 +30,7 @@ export interface ConnectorProps {
 
 export interface MessageData {
     tabID: string
-    type: GumbyMessageType
+    type: ScanMessageType
 }
 
 export class Connector {
@@ -123,7 +123,7 @@ export class Connector {
             tabID: tabID,
             command: 'scan',
             chatMessage: 'transform',
-            tabType: 'scan', //TODO
+            tabType: 'scan',
         })
     }
 
@@ -185,7 +185,7 @@ export class Connector {
     }
 
     // This handles messages received from the extension, to be forwarded to the webview
-    handleMessageReceive = async (messageData: { type: GumbyMessageType } & Record<string, any>) => {
+    handleMessageReceive = async (messageData: { type: ScanMessageType } & Record<string, any>) => {
         switch (messageData.type) {
             case 'asyncEventProgressMessage':
                 this.onAsyncEventProgress(

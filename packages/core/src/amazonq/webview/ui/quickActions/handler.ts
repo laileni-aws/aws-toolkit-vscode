@@ -50,7 +50,7 @@ export class QuickActionHandler {
                 this.handleGumbyCommand(tabID, eventId)
                 break
             case '/scan':
-                this.handleScanCommand(tabID, eventId)
+                this.handleScanCommand(tabID, eventId) //TODO: Need to add Prompt which populates once user hit /scan
                 break
             case '/clear':
                 this.handleClearCommand(tabID)
@@ -113,26 +113,27 @@ export class QuickActionHandler {
     }
 
     private handleScanCommand(tabID: string, eventId: string | undefined) {
-        // if (!this.isGumbyEnabled) {
-        //     return
-        // }
+        //TODO: Need to replace with isScanEnabled
+        if (!this.isGumbyEnabled) {
+            return
+        }
 
-        let gumbyTabId: string | undefined = undefined
+        let scanTabId: string | undefined = undefined
 
         this.tabsStorage.getTabs().forEach((tab) => {
             if (tab.type === 'scan') {
-                gumbyTabId = tab.id
+                scanTabId = tab.id
             }
         })
 
-        if (gumbyTabId !== undefined) {
-            this.mynahUI.selectTab(gumbyTabId, eventId || '')
-            this.connector.onTabChange(gumbyTabId)
+        if (scanTabId !== undefined) {
+            this.mynahUI.selectTab(scanTabId, eventId || '')
+            this.connector.onTabChange(scanTabId)
             return
         }
 
         let affectedTabId: string | undefined = tabID
-        // if there is no gumby tab, open a new one
+        // if there is no scan tab, open a new one
         if (this.tabsStorage.getTab(affectedTabId)?.type !== 'unknown') {
             affectedTabId = this.mynahUI.updateStore('', {
                 loadingChat: true,

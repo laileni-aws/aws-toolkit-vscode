@@ -10,7 +10,7 @@ import { ChatItemButton, ChatItemFormItem } from '@aws/mynah-ui/dist/static'
 import { GumbyCommands } from '../../controller/messenger/messengerUtils'
 import { ChatItemType } from '../../../../amazonq/commons/model'
 
-export type GumbyMessageType =
+export type ScanMessageType =
     | 'errorMessage'
     | 'asyncEventProgressMessage'
     | 'authenticationUpdateMessage'
@@ -24,14 +24,14 @@ export type GumbyMessageType =
 class UiMessage {
     readonly time: number = Date.now()
     readonly sender: string = gumbyChat
-    readonly type: GumbyMessageType = 'chatMessage'
+    readonly type: ScanMessageType = 'chatMessage'
     readonly status: string = 'info'
 
     public constructor(protected tabID: string) {}
 }
 
 export class ErrorMessage extends UiMessage {
-    override type: GumbyMessageType = 'errorMessage'
+    override type: ScanMessageType = 'errorMessage'
 
     constructor(
         readonly title: string,
@@ -55,7 +55,7 @@ export class AsyncEventProgressMessage extends UiMessage {
     readonly messageId?: string | undefined
     readonly buttons?: ChatItemButton[]
     readonly messageType = 'answer-part'
-    override type: GumbyMessageType = 'asyncEventProgressMessage'
+    override type: ScanMessageType = 'asyncEventProgressMessage'
 
     constructor(tabID: string, props: AsyncEventProgressMessageProps) {
         super(tabID)
@@ -69,7 +69,7 @@ export class AsyncEventProgressMessage extends UiMessage {
 export class AuthenticationUpdateMessage {
     readonly time: number = Date.now()
     readonly sender: string = gumbyChat
-    readonly type: GumbyMessageType = 'authenticationUpdateMessage'
+    readonly type: ScanMessageType = 'authenticationUpdateMessage'
 
     constructor(
         readonly gumbyEnabled: boolean,
@@ -78,7 +78,7 @@ export class AuthenticationUpdateMessage {
 }
 
 export class AuthNeededException extends UiMessage {
-    override type: GumbyMessageType = 'authNeededException'
+    override type: ScanMessageType = 'authNeededException'
 
     constructor(
         readonly message: string,
@@ -99,7 +99,7 @@ export class ChatPrompt extends UiMessage {
     readonly messageType = 'system-prompt'
     readonly formItems: ChatItemFormItem[]
     formButtons: ChatItemButton[]
-    override type: GumbyMessageType = 'chatPrompt'
+    override type: ScanMessageType = 'chatPrompt'
 
     constructor(props: ChatPromptProps, promptIDPrefix: string, tabID: string, keepCardAfterClick: boolean = true) {
         super(tabID)
@@ -134,7 +134,7 @@ export class ChatMessage extends UiMessage {
     readonly messageId?: string | undefined
     readonly messageType: ChatItemType
     readonly buttons: ChatItemButton[]
-    override type: GumbyMessageType = 'chatMessage'
+    override type: ScanMessageType = 'chatMessage'
 
     constructor(props: ChatMessageProps, tabID: string) {
         super(tabID)
@@ -146,7 +146,7 @@ export class ChatMessage extends UiMessage {
 }
 
 export class ChatInputEnabledMessage extends UiMessage {
-    override type: GumbyMessageType = 'chatInputEnabledMessage'
+    override type: ScanMessageType = 'chatInputEnabledMessage'
 
     constructor(
         tabID: string,
@@ -157,7 +157,7 @@ export class ChatInputEnabledMessage extends UiMessage {
 }
 
 export class SendCommandMessage extends UiMessage {
-    override type: GumbyMessageType = 'sendCommandMessage'
+    override type: ScanMessageType = 'sendCommandMessage'
 
     constructor(
         readonly command: GumbyCommands,
@@ -170,7 +170,7 @@ export class SendCommandMessage extends UiMessage {
 
 export class UpdatePlaceholderMessage extends UiMessage {
     readonly newPlaceholder: string
-    override type: GumbyMessageType = 'updatePlaceholderMessage'
+    override type: ScanMessageType = 'updatePlaceholderMessage'
 
     constructor(tabID: string, newPlaceholder: string) {
         super(tabID)
