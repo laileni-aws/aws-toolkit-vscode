@@ -159,8 +159,8 @@ export class Connector {
         this.gumbyChatConnector.transform(tabID)
     }
 
-    transformScans = (tabID: string): void => {
-        this.scanChatConnector.transform(tabID)
+    scans = (tabID: string): void => {
+        this.scanChatConnector.scan(tabID)
     }
 
     handleMessageReceive = async (message: MessageEvent): Promise<void> => {
@@ -181,6 +181,8 @@ export class Connector {
             await this.featureDevChatConnector.handleMessageReceive(messageData)
         } else if (messageData.sender === 'gumbyChat') {
             await this.gumbyChatConnector.handleMessageReceive(messageData)
+        } else if (messageData.sender === 'scanChat') {
+            await this.scanChatConnector.handleMessageReceive(messageData)
         }
     }
 

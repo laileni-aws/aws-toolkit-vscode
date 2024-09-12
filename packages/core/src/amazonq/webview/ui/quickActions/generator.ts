@@ -83,7 +83,7 @@ export class QuickActionGenerator {
             },
             scan: {
                 description: "This command isn't available in /scan",
-                unavailableItems: ['/dev', '/scan'],
+                unavailableItems: ['/dev', '/scan', '/transform'],
             },
             unknown: {
                 description: '',

@@ -6,7 +6,6 @@
 import { MessageListener } from '../../../../amazonq/messages/messageListener'
 import { ExtensionMessage } from '../../../../amazonq/webview/ui/commands'
 import { ChatControllerEventEmitters } from '../../controller/controller'
-// import * as vscode from 'vscode'
 
 type UIMessage = ExtensionMessage & {
     tabID?: string
@@ -65,7 +64,6 @@ export class UIMessageListener {
     }
 
     private transform(msg: UIMessage) {
-        // void vscode.window.setStatusBarMessage('Got to Gumby side')
         this.gumbyControllerEventsEmitters?.transformSelected.fire({
             tabID: msg.tabID,
         })

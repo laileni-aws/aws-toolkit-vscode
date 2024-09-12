@@ -38,10 +38,10 @@ To get started, describe the task you are trying to accomplish.`,
 I can help you upgrade your Java 8 and 11 codebases to Java 17.`,
     },
     scan: {
-        title: 'Q - Security Scans',
+        title: 'Q - Scan',
         placeholder: 'Open a new tab to chat with Q',
-        welcome: `Welcome to Q Security Scans!
-
-I can help you Security Scans`,
+        welcome: `Hi, I'm Amazon Q. I can answer your software development questions.
+  Ask me to explain, debug, or optimize your code.
+  You can enter \`/\` to see a list of quick actions. Add @workspace to beginning of your message to include your entire workspace as context.`,
     },
 }

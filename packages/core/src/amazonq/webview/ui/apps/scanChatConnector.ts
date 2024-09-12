@@ -118,11 +118,11 @@ export class Connector {
         }
     }
 
-    transform = (tabID: string): void => {
+    scan = (tabID: string): void => {
         this.sendMessageToExtension({
             tabID: tabID,
             command: 'scan',
-            chatMessage: 'transform',
+            chatMessage: '',
             tabType: 'scan',
         })
     }

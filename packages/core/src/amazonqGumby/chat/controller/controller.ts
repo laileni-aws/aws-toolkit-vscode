@@ -327,7 +327,6 @@ export class GumbyController {
                 await cleanupTransformationJob()
                 break
             case ButtonActions.CONFIRM_START_TRANSFORMATION_FLOW:
-                void vscode.window.setStatusBarMessage('Running Project scan Gumby')
                 this.resetTransformationChatFlow()
                 this.messenger.sendCommandMessage({ ...message, command: GumbyCommands.CLEAR_CHAT })
                 await this.transformInitiated(message)

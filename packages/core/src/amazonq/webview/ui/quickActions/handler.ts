@@ -163,7 +163,7 @@ export class QuickActionHandler {
                 loadingChat: true,
             })
 
-            this.connector.transformScans(affectedTabId)
+            this.connector.scans(affectedTabId)
         }
     }
 
