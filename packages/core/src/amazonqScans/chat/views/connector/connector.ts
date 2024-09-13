@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { gumbyChat } from '../../../models/constants'
+import { scanChat } from '../../../models/constants'
 import { AuthFollowUpType } from '../../../../amazonq/auth/model'
 import { MessagePublisher } from '../../../../amazonq/messages/messagePublisher'
 import { ChatItemButton, ChatItemFormItem } from '@aws/mynah-ui/dist/static'
-import { GumbyCommands } from '../../controller/messenger/messengerUtils'
+import { ScanCommands } from '../../controller/messenger/messengerUtils'
 import { ChatItemType } from '../../../../amazonq/commons/model'
 
 export type ScanMessageType =
@@ -23,7 +23,7 @@ export type ScanMessageType =
 
 class UiMessage {
     readonly time: number = Date.now()
-    readonly sender: string = gumbyChat
+    readonly sender: string = scanChat
     readonly type: ScanMessageType = 'chatMessage'
     readonly status: string = 'info'
 
@@ -68,7 +68,7 @@ export class AsyncEventProgressMessage extends UiMessage {
 
 export class AuthenticationUpdateMessage {
     readonly time: number = Date.now()
-    readonly sender: string = gumbyChat
+    readonly sender: string = scanChat
     readonly type: ScanMessageType = 'authenticationUpdateMessage'
 
     constructor(
@@ -160,7 +160,7 @@ export class SendCommandMessage extends UiMessage {
     override type: ScanMessageType = 'sendCommandMessage'
 
     constructor(
-        readonly command: GumbyCommands,
+        readonly command: ScanCommands,
         tabID: string,
         readonly eventId: string
     ) {

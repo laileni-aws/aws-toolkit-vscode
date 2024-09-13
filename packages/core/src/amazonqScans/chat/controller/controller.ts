@@ -3,76 +3,30 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * This class is responsible for responding to UI events by calling
- * the Gumby extension.
+ * the Scan extension.
  */
-import nodefs from 'fs'
-import path from 'path'
 import * as vscode from 'vscode'
-import { GumbyNamedMessages, Messenger } from './messenger/messenger'
+import { Messenger } from './messenger/messenger'
 import { AuthController } from '../../../amazonq/auth/controller'
 import { ChatSessionManager } from '../storages/chatSession'
 import { ConversationState, Session } from '../session/session'
 import { getLogger } from '../../../shared/logger'
 import { featureName } from '../../models/constants'
 import { AuthUtil } from '../../../codewhisperer/util/authUtil'
-import {
-    cleanupTransformationJob,
-    compileProject,
-    finishHumanInTheLoop,
-    getValidCandidateProjects,
-    openBuildLogFile,
-    openHilPomFile,
-    parseBuildFile,
-    postTransformationJob,
-    processTransformFormInput,
-    startTransformByQ,
-    stopTransformByQ,
-    validateCanCompileProject,
-    setMaven,
-} from '../../../codewhisperer/commands/startTransformByQ'
-import {
-    AggregatedCodeScanIssue,
-    JDKVersion,
-    TransformationCandidateProject,
-    transformByQState,
-} from '../../../codewhisperer/models/model'
-import {
-    AbsolutePathDetectedError,
-    AlternateDependencyVersionsNotFoundError,
-    JavaHomeNotSetError,
-    JobStartError,
-    ModuleUploadError,
-    NoJavaProjectsFoundError,
-    NoMavenJavaProjectsFoundError,
-    TransformationPreBuildError,
-} from '../../errors'
-import * as CodeWhispererConstants from '../../../codewhisperer/models/constants'
-import MessengerUtils, { ButtonActions, GumbyCommands } from './messenger/messengerUtils'
-import { CancelActionPositions, JDKToTelemetryValue, telemetryUndefined } from '../../telemetry/codeTransformTelemetry'
+import { AggregatedCodeScanIssue } from '../../../codewhisperer/models/model'
+import MessengerUtils, { ButtonActions, ScanCommands } from './messenger/messengerUtils'
 import { openUrl } from '../../../shared/utilities/vsCodeUtils'
-import {
-    telemetry,
-    CodeTransformJavaTargetVersionsAllowed,
-    CodeTransformJavaSourceVersionsAllowed,
-} from '../../../shared/telemetry/telemetry'
+import { telemetry } from '../../../shared/telemetry/telemetry'
 import { MetadataResult } from '../../../shared/telemetry/telemetryClient'
-import { CodeTransformTelemetryState } from '../../telemetry/codeTransformTelemetryState'
-import { getAuthType } from '../../../codewhisperer/service/transformByQ/transformApiHandler'
-import DependencyVersions from '../../models/dependencies'
-import { getStringHash } from '../../../shared/utilities/textUtilities'
-import { getTelemetryReasonDesc } from '../../../shared/errors'
-import { getVersionData } from '../../../codewhisperer/service/transformByQ/transformMavenHandler'
-import { showAutoScan, showSecurityScan, toggleCodeScans } from '../../../codewhisperer/commands/basicCommands'
+import { showFileScan, showSecurityScan } from '../../../codewhisperer/commands/basicCommands'
 import { placeholder } from '../../../shared/vscode/commands2'
 import { cwQuickPickSource } from '../../../codewhisperer/commands/types'
 import { i18n } from '../../../shared/i18n-helper'
-import { createAutoScans } from '../../../codewhisperer/ui/codeWhispererNodes'
-import { debounceStartSecurityScan } from '../../../codewhisperer/commands/startSecurityScan'
 
 // These events can be interactions within the chat,
 // or elsewhere in the IDE
 export interface ScanChatControllerEventEmitters {
-    readonly transformSelected: vscode.EventEmitter<any>
+    readonly runScan: vscode.EventEmitter<any>
     readonly tabOpened: vscode.EventEmitter<any>
     readonly tabClosed: vscode.EventEmitter<any>
     readonly authClicked: vscode.EventEmitter<any>
@@ -81,9 +35,6 @@ export interface ScanChatControllerEventEmitters {
     readonly transformationFinished: vscode.EventEmitter<any>
     readonly processHumanChatMessage: vscode.EventEmitter<any>
     readonly linkClicked: vscode.EventEmitter<any>
-    readonly humanInTheLoopStartIntervention: vscode.EventEmitter<any>
-    readonly humanInTheLoopPromptUserForDependency: vscode.EventEmitter<any>
-    readonly humanInTheLoopSelectionUploaded: vscode.EventEmitter<any>
     readonly errorThrown: vscode.EventEmitter<any>
     readonly showSecurityScan: vscode.EventEmitter<any>
 }
@@ -101,8 +52,8 @@ export class ScanController {
         this.messenger = messenger
         this.sessionStorage = ChatSessionManager.Instance
         this.authController = new AuthController()
-        this.chatControllerMessageListeners.transformSelected.event((data) => {
-            return this.transformInitiated(data)
+        this.chatControllerMessageListeners.runScan.event((data) => {
+            return this.scanInitiated(data)
         })
 
         this.chatControllerMessageListeners.tabOpened.event((data) => {
@@ -135,18 +86,6 @@ export class ScanController {
 
         this.chatControllerMessageListeners.linkClicked.event((data) => {
             this.openLink(data)
-        })
-
-        this.chatControllerMessageListeners.humanInTheLoopStartIntervention.event((data) => {
-            return this.startHILIntervention(data)
-        })
-
-        this.chatControllerMessageListeners.humanInTheLoopPromptUserForDependency.event((data) => {
-            return this.HILPromptForDependency(data)
-        })
-
-        this.chatControllerMessageListeners.humanInTheLoopSelectionUploaded.event((data) => {
-            return this.HILDependencySelectionUploaded(data)
         })
 
         this.chatControllerMessageListeners.errorThrown.event((data) => {
@@ -198,19 +137,11 @@ export class ScanController {
         this.messenger.sendCommandMessage(data)
     }
 
-    private async transformInitiated(message: any) {
-        // Start /transform chat flow
+    private async scanInitiated(message: any) {
         const session: Session = this.sessionStorage.getSession()
-        CodeTransformTelemetryState.instance.setSessionId()
 
         try {
             await telemetry.codeTransform_initiateTransform.run(async () => {
-                const authType = await getAuthType()
-                telemetry.record({
-                    codeTransformSessionId: CodeTransformTelemetryState.instance.getSessionId(),
-                    credentialSourceId: authType,
-                })
-
                 // check that a project is open
                 const workspaceFolders = vscode.workspace.workspaceFolders
                 if (workspaceFolders === undefined || workspaceFolders.length === 0) {
@@ -227,31 +158,7 @@ export class ScanController {
                     telemetry.record({ result: MetadataResult.Fail, reason: 'auth-failed' })
                     return
                 }
-
-                // If previous transformation was already running
-                switch (this.sessionStorage.getSession().conversationState) {
-                    case ConversationState.JOB_SUBMITTED:
-                        this.messenger.sendAsyncEventProgress(
-                            message.tabID,
-                            true,
-                            undefined,
-                            GumbyNamedMessages.JOB_SUBMISSION_STATUS_MESSAGE
-                        )
-                        this.messenger.sendJobSubmittedMessage(message.tabID)
-                        return
-                    case ConversationState.COMPILING:
-                        this.messenger.sendAsyncEventProgress(
-                            message.tabID,
-                            true,
-                            undefined,
-                            GumbyNamedMessages.COMPILATION_PROGRESS_MESSAGE
-                        )
-                        this.messenger.sendCompilationInProgress(message.tabID)
-                        return
-                }
-                // this.messenger.sendSecurityScans(message.tabID) //TODO
                 this.messenger.sendScans(message.tabID, 'Choose the type of Scan')
-                // this.messenger.sendTransformationIntroduction(message.tabID)
             })
         } catch (e: any) {
             // if there was an issue getting the list of valid projects, the error message will be shown here
@@ -262,28 +169,7 @@ export class ScanController {
     private async formActionClicked(message: any) {
         const typedAction = MessengerUtils.stringToEnumValue(ButtonActions, message.action as any)
         switch (typedAction) {
-            case ButtonActions.CONFIRM_TRANSFORMATION_FORM:
-                await this.handleUserProjectSelection(message)
-                break
-            case ButtonActions.CANCEL_TRANSFORMATION_FORM:
-                telemetry.codeTransform_submitSelection.emit({
-                    codeTransformSessionId: CodeTransformTelemetryState.instance.getSessionId(),
-                    userChoice: 'Cancel',
-                    result: MetadataResult.Pass,
-                })
-                this.messenger.sendJobFinishedMessage(message.tabID, CodeWhispererConstants.jobCancelledChatMessage)
-                break
-            case ButtonActions.VIEW_TRANSFORMATION_HUB:
-                await vscode.commands.executeCommand(GumbyCommands.FOCUS_TRANSFORMATION_HUB, CancelActionPositions.Chat)
-                this.messenger.sendJobSubmittedMessage(message.tabID)
-                break
-            case ButtonActions.STOP_TRANSFORMATION_JOB:
-                await stopTransformByQ(transformByQState.getJobId(), CancelActionPositions.Chat)
-                await postTransformationJob()
-                await cleanupTransformationJob()
-                break
             case ButtonActions.RUN_PROJECT_SCAN:
-                void vscode.window.setStatusBarMessage('Running Project scan')
                 await showSecurityScan.execute(placeholder, cwQuickPickSource)
                 this.messenger.sendAnswer({
                     type: 'answer-stream',
@@ -293,8 +179,7 @@ export class ScanController {
                 this.messenger.sendUpdatePlaceholder(message.tabID, 'Running a Security scan ...') // AWS.amazonq.featureDev.answer.approachCreation
                 // await this.transformInitiated(message)
                 break
-            case ButtonActions.CONFIRM_START_TRANSFORMATION_FLOW:
-                void vscode.window.setStatusBarMessage('Running File scan')
+            case ButtonActions.RUN_FILE_SCAN:
                 this.messenger.sendAnswer({
                     type: 'answer-stream',
                     tabID: message.tabID,
@@ -303,139 +188,15 @@ export class ScanController {
                 this.messenger.sendUpdatePlaceholder(
                     message.tabID,
                     'Running a Security scan on current active file ...'
-                ) // AWS.amazonq.featureDev.answer.approachCreation
-                showAutoScan.execute(placeholder, cwQuickPickSource)
+                )
+                await showFileScan.execute(placeholder, cwQuickPickSource)
                 // toggleCodeScans.execute(placeholder, cwQuickPickSource)
                 // await this.transformInitiated(message)
                 // this.resetTransformationChatFlow()
                 // this.messenger.sendCommandMessage({ ...message, command: GumbyCommands.CLEAR_CHAT })
                 // await this.transformInitiated(message)
                 break
-            case ButtonActions.CONFIRM_DEPENDENCY_FORM:
-                await this.continueJobWithSelectedDependency(message)
-                break
-            case ButtonActions.CANCEL_DEPENDENCY_FORM:
-                this.messenger.sendUserPrompt('Cancel', message.tabID)
-                await this.continueTransformationWithoutHIL(message)
-                break
-            case ButtonActions.OPEN_FILE:
-                await openHilPomFile()
-                break
-            case ButtonActions.OPEN_BUILD_LOG:
-                await openBuildLogFile()
-                this.messenger.sendViewBuildLog(message.tabID)
-                break
         }
-    }
-
-    // prompt user to pick project and specify source JDK version
-    private async handleUserProjectSelection(message: any) {
-        await telemetry.codeTransform_submitSelection.run(async () => {
-            const pathToProject: string = message.formSelectedValues['GumbyTransformProjectForm']
-            const toJDKVersion: JDKVersion = message.formSelectedValues['GumbyTransformJdkToForm']
-            const fromJDKVersion: JDKVersion = message.formSelectedValues['GumbyTransformJdkFromForm']
-
-            telemetry.record({
-                codeTransformJavaSourceVersionsAllowed: JDKToTelemetryValue(
-                    fromJDKVersion
-                ) as CodeTransformJavaSourceVersionsAllowed,
-                codeTransformJavaTargetVersionsAllowed: JDKToTelemetryValue(
-                    toJDKVersion
-                ) as CodeTransformJavaTargetVersionsAllowed,
-                codeTransformProjectId: pathToProject === undefined ? telemetryUndefined : getStringHash(pathToProject),
-                userChoice: 'Confirm',
-            })
-
-            const projectName = path.basename(pathToProject)
-            this.messenger.sendProjectSelectionMessage(projectName, fromJDKVersion, toJDKVersion, message.tabID)
-
-            if (fromJDKVersion === JDKVersion.UNSUPPORTED) {
-                this.messenger.sendUnrecoverableErrorResponse('unsupported-source-jdk-version', message.tabID)
-                telemetry.record({
-                    result: MetadataResult.Fail,
-                    reason: 'unsupported-source-jdk-version',
-                })
-                return
-            }
-
-            await processTransformFormInput(pathToProject, fromJDKVersion, toJDKVersion)
-            await this.validateBuildWithPromptOnError(message)
-        })
-    }
-
-    private async prepareProjectForSubmission(message: { pathToJavaHome: string; tabID: string }): Promise<void> {
-        if (message.pathToJavaHome) {
-            transformByQState.setJavaHome(message.pathToJavaHome)
-            getLogger().info(
-                `CodeTransformation: using JAVA_HOME = ${transformByQState.getJavaHome()} since source JDK does not match Maven JDK`
-            )
-        }
-
-        const projectPath = transformByQState.getProjectPath()
-        // TODO: remove deprecated metric once BI started using new metrics
-        telemetry.codeTransform_jobStartedCompleteFromPopupDialog.emit({
-            codeTransformSessionId: CodeTransformTelemetryState.instance.getSessionId(),
-            codeTransformJavaSourceVersionsAllowed: JDKToTelemetryValue(
-                transformByQState.getSourceJDKVersion()!
-            ) as CodeTransformJavaSourceVersionsAllowed,
-            codeTransformJavaTargetVersionsAllowed: JDKToTelemetryValue(
-                transformByQState.getTargetJDKVersion()
-            ) as CodeTransformJavaTargetVersionsAllowed,
-            codeTransformProjectId: projectPath === undefined ? telemetryUndefined : getStringHash(projectPath),
-            result: MetadataResult.Pass,
-        })
-
-        // Pre-build project locally
-        try {
-            this.sessionStorage.getSession().conversationState = ConversationState.COMPILING
-            this.messenger.sendCompilationInProgress(message.tabID)
-            await compileProject()
-        } catch (err: any) {
-            this.messenger.sendUnrecoverableErrorResponse('could-not-compile-project', message.tabID)
-            // reset state to allow "Start a new transformation" button to work
-            this.sessionStorage.getSession().conversationState = ConversationState.IDLE
-            throw err
-        }
-
-        this.messenger.sendCompilationFinished(message.tabID)
-
-        const authState = await AuthUtil.instance.getChatAuthState()
-        if (authState.amazonQ !== 'connected') {
-            void this.messenger.sendAuthNeededExceptionMessage(authState, message.tabID)
-            this.sessionStorage.getSession().isAuthenticating = true
-            return
-        }
-
-        // give user a non-blocking warning if build file appears to contain absolute paths
-        await parseBuildFile()
-
-        this.messenger.sendAsyncEventProgress(
-            message.tabID,
-            true,
-            undefined,
-            GumbyNamedMessages.JOB_SUBMISSION_STATUS_MESSAGE
-        )
-        this.messenger.sendJobSubmittedMessage(message.tabID)
-        this.sessionStorage.getSession().conversationState = ConversationState.JOB_SUBMITTED
-        await startTransformByQ()
-    }
-
-    private async validateBuildWithPromptOnError(message: any | undefined = undefined): Promise<void> {
-        try {
-            // Check Java Home is set (not yet prebuilding)
-            await validateCanCompileProject()
-        } catch (err: any) {
-            if (err instanceof JavaHomeNotSetError) {
-                this.sessionStorage.getSession().conversationState = ConversationState.PROMPT_JAVA_HOME
-                this.messenger.sendStaticTextResponse('java-home-not-set', message.tabID)
-                this.messenger.sendChatInputEnabled(message.tabID, true)
-                this.messenger.sendUpdatePlaceholder(message.tabID, 'Enter the path to your Java installation.')
-                return
-            }
-            throw err
-        }
-
-        await this.prepareProjectForSubmission(message)
     }
 
     private transformationFinished(data: { message: string | undefined; tabID: string }) {
@@ -450,74 +211,17 @@ export class ScanController {
         this.sessionStorage.getSession().conversationState = ConversationState.IDLE
     }
 
-    private startHILIntervention(data: { tabID: string; codeSnippet: string }) {
-        this.sessionStorage.getSession().conversationState = ConversationState.WAITING_FOR_INPUT
-        this.messenger.sendHumanInTheLoopInitialMessage(data.tabID, data.codeSnippet)
-    }
-
-    private HILPromptForDependency(data: { tabID: string; dependencies: DependencyVersions }) {
-        this.messenger.sendDependencyVersionsFoundMessage(data.dependencies, data.tabID)
-    }
-
-    private HILDependencySelectionUploaded(data: { tabID: string }) {
-        this.sessionStorage.getSession().conversationState = ConversationState.JOB_SUBMITTED
-        this.messenger.sendHILResumeMessage(data.tabID)
-    }
-
     private async processHumanChatMessage(data: { message: string; tabID: string }) {
         this.messenger.sendUserPrompt(data.message, data.tabID)
         this.messenger.sendChatInputEnabled(data.tabID, false)
         this.messenger.sendUpdatePlaceholder(data.tabID, 'Open a new tab to chat with Q')
-
-        const session = this.sessionStorage.getSession()
-        switch (session.conversationState) {
-            case ConversationState.PROMPT_JAVA_HOME: {
-                const pathToJavaHome = extractPath(data.message)
-
-                if (pathToJavaHome) {
-                    await this.prepareProjectForSubmission({
-                        pathToJavaHome,
-                        tabID: data.tabID,
-                    })
-                } else {
-                    this.messenger.sendUnrecoverableErrorResponse('invalid-java-home', data.tabID)
-                }
-            }
-        }
-    }
-
-    private async continueJobWithSelectedDependency(message: { tabID: string; formSelectedValues: any }) {
-        const selectedDependency = message.formSelectedValues['GumbyTransformDependencyForm']
-        this.messenger.sendHILContinueMessage(message.tabID, selectedDependency)
-        await finishHumanInTheLoop(selectedDependency)
     }
 
     private openLink(message: { link: string }) {
         void openUrl(vscode.Uri.parse(message.link))
     }
 
-    private async handleError(message: { error: Error; tabID: string }) {
-        if (message.error instanceof AlternateDependencyVersionsNotFoundError) {
-            this.messenger.sendKnownErrorResponse(message.tabID, CodeWhispererConstants.dependencyVersionsErrorMessage)
-            await this.continueTransformationWithoutHIL(message)
-        } else if (message.error instanceof ModuleUploadError) {
-            this.resetTransformationChatFlow()
-        } else if (message.error instanceof JobStartError) {
-            this.resetTransformationChatFlow()
-        } else if (message.error instanceof TransformationPreBuildError) {
-            this.messenger.sendJobSubmittedMessage(message.tabID, true)
-            this.messenger.sendAsyncEventProgress(
-                message.tabID,
-                true,
-                undefined,
-                GumbyNamedMessages.JOB_FAILED_IN_PRE_BUILD
-            )
-            await openBuildLogFile()
-            this.messenger.sendViewBuildLog(message.tabID)
-        } else if (message.error instanceof AbsolutePathDetectedError) {
-            this.messenger.sendKnownErrorResponse(message.tabID, message.error.message)
-        }
-    }
+    private async handleError(message: { error: Error; tabID: string }) {}
 
     private async handleScanResults(message: {
         error: Error
@@ -527,40 +231,9 @@ export class ScanController {
     }) {
         void vscode.window.setStatusBarMessage('Came back to Q chat')
         // this.resetTransformationChatFlow()
-        this.messenger.sendCommandMessage({ ...message, command: GumbyCommands.CLEAR_CHAT })
+        this.messenger.sendCommandMessage({ ...message, command: ScanCommands.CLEAR_CHAT })
         this.messenger.sendScanResults(message.tabID, message.totalIssues, message.securityRecommendationCollection) // Todo add issue addon args
         this.messenger.sendScans(message.tabID, 'Choose the type of Scan')
         this.messenger.sendUpdatePlaceholder(message.tabID, `Choose the type of Scan...`)
     }
-
-    private async continueTransformationWithoutHIL(message: { tabID: string }) {
-        this.sessionStorage.getSession().conversationState = ConversationState.JOB_SUBMITTED
-        CodeTransformTelemetryState.instance.setCodeTransformMetaDataField({
-            canceledFromChat: true,
-        })
-        try {
-            await finishHumanInTheLoop()
-        } catch (err: any) {
-            this.transformationFinished({ tabID: message.tabID, message: (err as Error).message })
-        }
-
-        this.messenger.sendStaticTextResponse('end-HIL-early', message.tabID)
-    }
-}
-
-/**
- * Examples:
- * ```
- * extractPath("./some/path/here") => "C:/some/root/some/path/here"
- * extractPath(" ./some/path/here\n") => "C:/some/root/some/path/here"
- * extractPath("C:/some/nonexistent/path/here") => undefined
- * extractPath("C:/some/filepath/.txt") => undefined
- * ```
- *
- * @param text
- * @returns the absolute path if path points to existing folder, otherwise undefined
- */
-function extractPath(text: string): string | undefined {
-    const resolvedPath = path.resolve(text.trim())
-    return nodefs.existsSync(resolvedPath) ? resolvedPath : undefined
 }

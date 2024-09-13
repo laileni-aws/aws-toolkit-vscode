@@ -3,18 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { TransformationCandidateProject } from '../../../codewhisperer/models/model'
-
 export enum ConversationState {
     IDLE,
-    PROMPT_JAVA_HOME,
-    COMPILING,
     JOB_SUBMITTED,
     WAITING_FOR_INPUT,
-}
-
-export interface ProjectDetails {
-    pathToJavaHome: string
 }
 
 export class Session {
@@ -26,24 +18,9 @@ export class Session {
 
     public conversationState: ConversationState = ConversationState.IDLE
 
-    // If the user is prompted to provide more details about their project, it is stored here for use in future transformations
-    public projectDetails: ProjectDetails | undefined
-
-    public candidateProjects: Map<string, TransformationCandidateProject> = new Map<
-        string,
-        TransformationCandidateProject
-    >()
-
     constructor() {}
 
     public isTabOpen(): boolean {
         return this.tabID !== undefined
-    }
-
-    public updateCandidateProjects(newCandidateProjects: TransformationCandidateProject[]) {
-        this.candidateProjects = new Map<string, TransformationCandidateProject>()
-        newCandidateProjects.map((candidateProject) => {
-            this.candidateProjects.set(candidateProject.path, candidateProject)
-        })
     }
 }

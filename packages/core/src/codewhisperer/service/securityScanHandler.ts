@@ -264,8 +264,8 @@ export function throwIfCancelled(scope: CodeWhispererConstants.CodeAnalysisScope
         case CodeWhispererConstants.CodeAnalysisScope.FILE: {
             const latestCodeScanStartTime = CodeScansState.instance.getLatestScanTime()
             if (
+                //TODO: Enable once the CodeAnalysisScope from Q_FILE is handled.
                 // !CodeScansState.instance.isScansEnabled() ||
-                // (latestCodeScanStartTime && latestCodeScanStartTime > codeScanStartTime)
                 latestCodeScanStartTime &&
                 latestCodeScanStartTime > codeScanStartTime
             ) {

@@ -6,7 +6,7 @@
 import { MessageListener } from '../../../../amazonq/messages/messageListener'
 import { ExtensionMessage } from '../../../../amazonq/webview/ui/commands'
 import { ScanChatControllerEventEmitters } from '../../controller/controller'
-// import * as vscode from 'vscode'
+
 type UIMessage = ExtensionMessage & {
     tabID?: string
 }
@@ -17,11 +17,11 @@ export interface UIMessageListenerProps {
 }
 
 export class UIMessageListener {
-    private gumbyControllerEventsEmitters: ScanChatControllerEventEmitters | undefined
+    private scanControllerEventsEmitters: ScanChatControllerEventEmitters | undefined
     private webViewMessageListener: MessageListener<any>
 
     constructor(props: UIMessageListenerProps) {
-        this.gumbyControllerEventsEmitters = props.chatControllerEventEmitters
+        this.scanControllerEventsEmitters = props.chatControllerEventEmitters
         this.webViewMessageListener = props.webViewMessageListener
 
         // Now we are listening to events that get sent from amazonq/webview/actions/actionListener (e.g. the tab)
@@ -33,7 +33,7 @@ export class UIMessageListener {
     private handleMessage(msg: ExtensionMessage) {
         switch (msg.command) {
             case 'scan':
-                this.transform(msg)
+                this.scan(msg)
                 break
             case 'new-tab-was-created':
                 this.tabOpened(msg)
@@ -57,45 +57,45 @@ export class UIMessageListener {
     }
 
     private processChatPrompt(msg: UIMessage) {
-        this.gumbyControllerEventsEmitters?.processHumanChatMessage.fire({
+        this.scanControllerEventsEmitters?.processHumanChatMessage.fire({
             message: msg.chatMessage,
             tabID: msg.tabID,
         })
     }
 
-    private transform(msg: UIMessage) {
-        this.gumbyControllerEventsEmitters?.transformSelected.fire({
+    private scan(msg: UIMessage) {
+        this.scanControllerEventsEmitters?.runScan.fire({
             tabID: msg.tabID,
         })
     }
 
     private tabOpened(msg: UIMessage) {
-        this.gumbyControllerEventsEmitters?.tabOpened.fire({
+        this.scanControllerEventsEmitters?.tabOpened.fire({
             tabID: msg.tabID,
         })
     }
 
     private tabClosed(msg: UIMessage) {
-        this.gumbyControllerEventsEmitters?.tabClosed.fire({
+        this.scanControllerEventsEmitters?.tabClosed.fire({
             tabID: msg.tabID,
         })
     }
 
     private authClicked(msg: UIMessage) {
-        this.gumbyControllerEventsEmitters?.authClicked.fire({
+        this.scanControllerEventsEmitters?.authClicked.fire({
             tabID: msg.tabID,
             authType: msg.authType,
         })
     }
 
     private formActionClicked(msg: UIMessage) {
-        this.gumbyControllerEventsEmitters?.formActionClicked.fire({
+        this.scanControllerEventsEmitters?.formActionClicked.fire({
             ...msg,
         })
     }
 
     private linkClicked(msg: UIMessage) {
-        this.gumbyControllerEventsEmitters?.linkClicked.fire({
+        this.scanControllerEventsEmitters?.linkClicked.fire({
             ...msg,
         })
     }

@@ -41,7 +41,7 @@ import {
     signoutCodeWhisperer,
     toggleCodeScans,
     registerToolkitApiCallback,
-    showAutoScan,
+    showFileScan,
 } from './commands/basicCommands'
 import { sleep } from '../shared/utilities/timeoutUtils'
 import { ReferenceLogViewProvider } from './service/referenceLogViewProvider'
@@ -221,8 +221,8 @@ export async function activate(context: ExtContext): Promise<void> {
         enableCodeSuggestions.register(context),
         // code scan
         showSecurityScan.register(context, securityPanelViewProvider, client),
-        //code auto scan
-        showAutoScan.register(context, securityPanelViewProvider, client),
+        // file scan
+        showFileScan.register(context, securityPanelViewProvider, client),
         // show security issue webview panel
         openSecurityIssuePanel.register(context),
         // sign in with sso or AWS ID
@@ -395,21 +395,6 @@ export async function activate(context: ExtContext): Promise<void> {
                 }
             })
         )
-
-        //TODO: Add unique state for file scan similar to project scan.
-        // Trigger scan if the toggle has just been enabled
-        CodeScansState.instance.onDidChangeState((isScansEnabled) => {
-            const editor = vscode.window.activeTextEditor
-            if (editor && shouldRunAutoScan(editor, isScansEnabled) && editor.document.getText().length > 0) {
-                void debounceStartSecurityScan(
-                    securityPanelViewProvider,
-                    editor,
-                    client,
-                    context.extensionContext,
-                    CodeWhispererConstants.CodeAnalysisScope.FILE
-                )
-            }
-        })
 
         // Trigger scan if the toggle has just been enabled
         CodeScansState.instance.onDidChangeState((isScansEnabled) => {

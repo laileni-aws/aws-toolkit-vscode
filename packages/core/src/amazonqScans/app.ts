@@ -13,36 +13,32 @@ import { Messenger } from './chat/controller/messenger/messenger'
 import { UIMessageListener } from './chat/views/actions/uiMessageListener'
 import { debounce } from 'lodash'
 import { AuthUtil } from '../codewhisperer/util/authUtil'
-import { showTransformationHub } from './commands'
 import { codeScanState } from '../codewhisperer/models/model'
 import { ChatSessionManager } from './chat/storages/chatSession'
 
 export function init(appContext: AmazonQAppInitContext) {
-    const gumbyChatControllerEventEmitters: ScanChatControllerEventEmitters = {
-        transformSelected: new vscode.EventEmitter<any>(),
+    const scanChatControllerEventEmitters: ScanChatControllerEventEmitters = {
+        runScan: new vscode.EventEmitter<any>(),
         authClicked: new vscode.EventEmitter<any>(),
         formActionClicked: new vscode.EventEmitter<any>(),
         commandSentFromIDE: new vscode.EventEmitter<any>(),
+        transformationFinished: new vscode.EventEmitter<any>(),
         tabOpened: new vscode.EventEmitter<any>(),
         tabClosed: new vscode.EventEmitter<any>(),
-        transformationFinished: new vscode.EventEmitter<any>(),
         processHumanChatMessage: new vscode.EventEmitter<any>(),
         linkClicked: new vscode.EventEmitter<any>(),
-        humanInTheLoopStartIntervention: new vscode.EventEmitter<any>(),
-        humanInTheLoopPromptUserForDependency: new vscode.EventEmitter<any>(),
-        humanInTheLoopSelectionUploaded: new vscode.EventEmitter<any>(),
         errorThrown: new vscode.EventEmitter<any>(),
         showSecurityScan: new vscode.EventEmitter<any>(),
     }
     const dispatcher = new AppToWebViewMessageDispatcher(appContext.getAppsToWebViewMessagePublisher())
     const messenger = new Messenger(dispatcher)
 
-    new ScanController(gumbyChatControllerEventEmitters, messenger, appContext.onDidChangeAmazonQVisibility.event)
+    new ScanController(scanChatControllerEventEmitters, messenger, appContext.onDidChangeAmazonQVisibility.event)
 
     const scanChatUIInputEventEmitter = new vscode.EventEmitter<any>()
 
     new UIMessageListener({
-        chatControllerEventEmitters: gumbyChatControllerEventEmitters,
+        chatControllerEventEmitters: scanChatControllerEventEmitters,
         webViewMessageListener: new MessageListener<any>(scanChatUIInputEventEmitter),
     })
 
@@ -68,7 +64,5 @@ export function init(appContext: AmazonQAppInitContext) {
         return debouncedEvent()
     })
 
-    showTransformationHub.register()
-
-    codeScanState.setChatControllers(gumbyChatControllerEventEmitters)
+    codeScanState.setChatControllers(scanChatControllerEventEmitters)
 }

@@ -96,7 +96,6 @@ export async function startSecurityScan(
     context: vscode.ExtensionContext,
     scope: CodeWhispererConstants.CodeAnalysisScope
 ) {
-    void vscode.window.setStatusBarMessage('File Scan has started')
     const logger = getLoggerForScope(scope)
     /**
      * Step 0: Initial Code Scan telemetry
@@ -127,7 +126,6 @@ export async function startSecurityScan(
         codewhispererCodeScanScope: scope,
     }
     try {
-        getLogger().info('Step 0 Started')
         logger.verbose(`Starting security scan `)
         /**
          * Step 1: Generate zip
@@ -135,7 +133,6 @@ export async function startSecurityScan(
         throwIfCancelled(scope, codeScanStartTime)
         const zipUtil = new ZipUtil()
         const zipMetadata = await zipUtil.generateZip(editor?.document.uri, scope)
-        getLogger().info('Generated ZipMetadata')
         const projectPaths = zipUtil.getProjectPaths()
 
         const contextTruncationStartTime = performance.now()
@@ -148,7 +145,6 @@ export async function startSecurityScan(
         if (zipMetadata.language) {
             codeScanTelemetryEntry.codewhispererLanguage = zipMetadata.language
         }
-        getLogger().info('Step 1 Pass')
         /**
          * Step 2: Get presigned Url, upload and clean up
          */
@@ -162,7 +158,6 @@ export async function startSecurityScan(
             await zipUtil.removeTmpFiles(zipMetadata, scope)
             codeScanTelemetryEntry.artifactsUploadDuration = performance.now() - uploadStartTime
         }
-        getLogger().info('Step 2 Pass')
         /**
          * Step 3:  Create scan job
          */
@@ -182,7 +177,6 @@ export async function startSecurityScan(
         }
         logger.verbose(`Created security scan job.`)
         codeScanTelemetryEntry.codewhispererCodeScanJobId = scanJob.jobId
-        getLogger().info('Step 3 Pass')
         /**
          * Step 4:  Polling mechanism on scan job status
          */
@@ -192,7 +186,6 @@ export async function startSecurityScan(
             logger.verbose(`Security scan failed.`)
             throw new CodeScanJobFailedError()
         }
-        getLogger().info('Step 4 Pass')
         /**
          * Step 5: Process and render scan results
          */
@@ -217,7 +210,6 @@ export async function startSecurityScan(
         codeScanTelemetryEntry.codewhispererCodeScanIssuesWithFixes = withFixes
         throwIfCancelled(scope, codeScanStartTime)
         logger.verbose(`Security scan totally found ${total} issues. ${withFixes} of them have fixes.`)
-        getLogger().info('Step 4 Pass')
         showSecurityScanResults(
             securityPanelViewProvider,
             securityRecommendationCollection,
@@ -230,7 +222,6 @@ export async function startSecurityScan(
 
         logger.verbose(`Security scan completed.`)
     } catch (error) {
-        void vscode.window.setStatusBarMessage('Error occurred')
         getLogger().error('Security scan failed.', error)
         if (error instanceof CodeScanStoppedError) {
             codeScanTelemetryEntry.result = 'Cancelled'
@@ -282,18 +273,13 @@ export function showSecurityScanResults(
         securityPanelViewProvider.addLines(securityRecommendationCollection, editor)
         void vscode.commands.executeCommand('workbench.view.extension.aws-codewhisperer-security-panel')
     } else {
-        void vscode.window.setStatusBarMessage('Displaying results')
-        //TODO: Get the issues and pass as args into this
         codeScanState.getChatControllers()?.showSecurityScan.fire({
             message: 'This is generated Error to test',
             totalIssues,
             securityRecommendationCollection,
             tabID: ChatSessionManager.Instance.getSession().tabID,
         })
-        // transformByQState.getChatControllers()?.errorThrown.fire({
-        //     error:"This is generated Error to test",
-        //     tabID: ChatSessionManager.Instance.getSession().tabID,
-        // })
+        //TODO: Deprecate showing results in the Problems terminal
         initSecurityScanRender(securityRecommendationCollection, context, editor, scope)
         if (scope === CodeWhispererConstants.CodeAnalysisScope.PROJECT) {
             void vscode.commands.executeCommand('workbench.action.problems.focus')

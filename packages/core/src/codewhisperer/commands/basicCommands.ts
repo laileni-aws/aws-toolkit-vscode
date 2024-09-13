@@ -90,7 +90,6 @@ export const enableCodeSuggestions = Commands.declare(
 export const toggleCodeScans = Commands.declare(
     { id: 'aws.codeWhisperer.toggleCodeScan', compositeKey: { 1: 'source' } },
     (scansState: CodeScansState) => async (_: VsCodeCommandArg, source: CodeWhispererSource) => {
-        void vscode.window.setStatusBarMessage('Came to toggleCodeScans')
         await telemetry.aws_modifySetting.run(async (span) => {
             if (isBuilderIdConnection(AuthUtil.instance.conn)) {
                 throw new Error(`Auto-scans are not supported with the Amazon Builder ID connection.`)
@@ -151,11 +150,10 @@ export const showSecurityScan = Commands.declare(
         }
 )
 
-export const showAutoScan = Commands.declare(
-    { id: 'aws.amazonq.security.autoscan', compositeKey: { 1: 'source' } },
+export const showFileScan = Commands.declare(
+    { id: 'aws.amazonq.security.filescan', compositeKey: { 1: 'source' } },
     (context: ExtContext, securityPanelViewProvider: SecurityPanelViewProvider, client: DefaultCodeWhispererClient) =>
         async (_: VsCodeCommandArg, source: CodeWhispererSource) => {
-            void vscode.window.setStatusBarMessage('Running the AutoScan')
             const editor = vscode.window.activeTextEditor
             void debounceStartSecurityScan(
                 securityPanelViewProvider,

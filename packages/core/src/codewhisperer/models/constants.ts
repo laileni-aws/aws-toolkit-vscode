@@ -458,16 +458,14 @@ export const openTransformationHubButtonText = 'Open Transformation Hub'
 
 export const startTransformationButtonText = 'Start a new transformation'
 
-export const startProjectScan = 'Run Project Scan'
+export const startProjectScan = 'Project Scan'
 
-export const startFileScan = 'Run File Scan'
+export const startFileScan = 'File Scan'
 
 export const stopTransformationButtonText = 'Stop transformation'
 
 export const checkingForProjectsChatMessage =
     'I am checking for open projects that are eligible for Code Transformation.'
-
-export const checkingForProjectsChatMessageScans = 'I am checking for Scans'
 
 export const buildStartedChatMessage =
     'I am building your project. This can take up to 10 minutes, depending on the size of your project.'
