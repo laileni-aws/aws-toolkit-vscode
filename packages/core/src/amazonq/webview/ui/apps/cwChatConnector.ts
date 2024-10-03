@@ -100,7 +100,8 @@ export class Connector {
         codeReference?: CodeReference[],
         eventId?: string,
         codeBlockIndex?: number,
-        totalCodeBlocks?: number
+        totalCodeBlocks?: number,
+        userIntent?: string
     ): void => {
         this.sendMessageToExtension({
             tabID: tabID,
@@ -113,6 +114,7 @@ export class Connector {
             eventId,
             codeBlockIndex,
             totalCodeBlocks,
+            userIntent,
         })
     }
 
@@ -124,7 +126,8 @@ export class Connector {
         codeReference?: CodeReference[],
         eventId?: string,
         codeBlockIndex?: number,
-        totalCodeBlocks?: number
+        totalCodeBlocks?: number,
+        userIntent?: string
     ): void => {
         this.sendMessageToExtension({
             tabID: tabID,
@@ -137,6 +140,7 @@ export class Connector {
             eventId,
             codeBlockIndex,
             totalCodeBlocks,
+            userIntent,
         })
     }
 
@@ -269,6 +273,7 @@ export class Connector {
                 canBeVoted: true,
                 codeReference: messageData.codeReference,
                 traceId: messageData.traceId,
+                userIntent: messageData.userIntent,
             }
 
             // If it is not there we will not set it
@@ -309,6 +314,7 @@ export class Connector {
                           }
                         : undefined,
                 traceId: messageData.traceId,
+                userIntent: messageData.userIntent,
             }
             this.onChatAnswerReceived(messageData.tabID, answer)
 

@@ -23,6 +23,8 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
     // eslint-disable-next-line prefer-const
     let connector: Connector
 
+    const messageUserIntentMap = new Map<string, string>()
+
     window.addEventListener('error', (e) => {
         const { error, message } = e
         ideApi.postMessage({
@@ -201,6 +203,9 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
                         ? { type: ChatItemType.CODE_RESULT, fileList: item.fileList }
                         : {}),
                 })
+                if (item.messageId !== undefined && item.userIntent !== undefined) {
+                    messageUserIntentMap.set(item.messageId, item.userIntent)
+                }
                 return
             }
 
@@ -429,7 +434,28 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
                 content: 'Thanks for your feedback.',
             })
         },
-        onCodeInsertToCursorPosition: connector.onCodeInsertToCursorPosition,
+        onCodeInsertToCursorPosition: (
+            tabId,
+            messageId,
+            code,
+            type,
+            referenceTrackerInfo,
+            eventId,
+            codeBlockIndex,
+            totalCodeBlocks
+        ) => {
+            connector.onCodeInsertToCursorPosition(
+                tabId,
+                messageId,
+                code,
+                type,
+                referenceTrackerInfo,
+                eventId,
+                codeBlockIndex,
+                totalCodeBlocks,
+                messageUserIntentMap.get(messageId) ?? undefined
+            )
+        },
         onCopyCodeToClipboard: (
             tabId,
             messageId,
@@ -448,7 +474,8 @@ export const createMynahUI = (ideApi: any, amazonQEnabled: boolean) => {
                 referenceTrackerInfo,
                 eventId,
                 codeBlockIndex,
-                totalCodeBlocks
+                totalCodeBlocks,
+                messageUserIntentMap.get(messageId) ?? undefined
             )
             mynahUI.notify({
                 type: NotificationType.SUCCESS,

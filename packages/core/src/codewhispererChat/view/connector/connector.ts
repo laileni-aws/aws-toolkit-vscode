@@ -141,6 +141,7 @@ export interface ChatMessageProps {
     readonly codeReference?: CodeReference[]
     readonly triggerID: string
     readonly messageID: string
+    readonly userIntent: string | undefined
     readonly traceId?: string
 }
 
@@ -155,6 +156,7 @@ export class ChatMessage extends UiMessage {
     readonly triggerID: string
     readonly messageID: string | undefined
     readonly traceId?: string
+    readonly userIntent: string | undefined
     override type = 'chatMessage'
 
     constructor(props: ChatMessageProps, tabID: string) {
@@ -168,6 +170,7 @@ export class ChatMessage extends UiMessage {
         this.triggerID = props.triggerID
         this.messageID = props.messageID
         this.traceId = props.traceId
+        this.userIntent = props.userIntent
     }
 }
 
