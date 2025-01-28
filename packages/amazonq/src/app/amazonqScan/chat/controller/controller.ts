@@ -98,6 +98,10 @@ export class ScanController {
         this.chatControllerMessageListeners.scanCancelled.event((data) => {
             return this.handleScanCancelled(data)
         })
+
+        this.chatControllerMessageListeners.processChatItemVotedMessage.event((data) => {
+            // TODO: Emit the telemetry event
+        })
     }
 
     private async tabOpened(message: any) {

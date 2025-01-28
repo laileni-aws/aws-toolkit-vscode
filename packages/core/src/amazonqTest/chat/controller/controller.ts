@@ -58,7 +58,7 @@ import {
 import { UserIntent } from '@amzn/codewhisperer-streaming'
 import { getSelectedCustomization } from '../../../codewhisperer/util/customizationUtil'
 import { createCodeWhispererChatStreamingClient } from '../../../shared/clients/codewhispererChatClient'
-import { ChatTriggerType } from '../../../codewhispererChat/controllers/chat/model'
+import { ChatItemVotedMessage, ChatTriggerType } from '../../../codewhispererChat/controllers/chat/model'
 import { triggerPayloadToChatRequest } from '../../../codewhispererChat/controllers/chat/chatRequest/converter'
 import { EditorContentController } from '../../../amazonq/commons/controllers/contentController'
 import { amazonQTabSuffix } from '../../../shared/constants'
@@ -82,6 +82,7 @@ export interface TestChatControllerEventEmitters {
     readonly errorThrown: vscode.EventEmitter<any>
     readonly insertCodeAtCursorPosition: vscode.EventEmitter<any>
     readonly processResponseBodyLinkClick: vscode.EventEmitter<any>
+    readonly processChatItemVotedMessage: vscode.EventEmitter<any>
 }
 
 type OpenDiffMessage = {
@@ -160,6 +161,12 @@ export class TestController {
             return this.processLink(data)
         })
 
+        this.chatControllerMessageListeners.processChatItemVotedMessage.event((data) => {
+            this.processChatItemVotedMessage(data).catch((e) => {
+                getLogger().error('processChatItemVotedMessage failed: %s', (e as Error).message)
+            })
+        })
+
         this.chatControllerMessageListeners.followUpClicked.event((data) => {
             switch (data.followUp.type) {
                 case FollowUpTypes.ViewDiff:
@@ -207,6 +214,10 @@ export class TestController {
             logger.error('tabOpened failed: %O', err)
             this.messenger.sendErrorMessage(err.message, message.tabID)
         }
+    }
+
+    private async processChatItemVotedMessage(message: ChatItemVotedMessage) {
+        // TODO: Emit the telemetry event
     }
 
     private async tabClosed(data: any) {
