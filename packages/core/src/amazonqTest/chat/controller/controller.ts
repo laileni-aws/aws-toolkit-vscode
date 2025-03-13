@@ -53,6 +53,7 @@ import { randomUUID } from '../../../shared/crypto'
 import { tempDirPath, testGenerationLogsDir } from '../../../shared/filesystemUtilities'
 import { CodeReference } from '../../../codewhispererChat/view/connector/connector'
 import { TelemetryHelper } from '../../../codewhisperer/util/telemetryHelper'
+import { QCliStreamingService } from '../streaming/qCliStreamingService'
 import { Reference, testGenState } from '../../../codewhisperer/models/model'
 import {
     referenceLogText,
@@ -110,6 +111,9 @@ export class TestController {
         this.sessionStorage = ChatSessionManager.Instance
         this.authController = new AuthController()
         this.editorContentController = new EditorContentController()
+
+        // Initialize the Q CLI streaming service
+        QCliStreamingService.getInstance().initialize(messenger)
 
         this.chatControllerMessageListeners.tabOpened.event((data) => {
             return this.tabOpened(data)
@@ -218,6 +222,12 @@ export class TestController {
                 session.isAuthenticating = true
                 return
             }
+
+            // Update placeholder to indicate Q CLI-like functionality
+            this.messenger.sendUpdatePlaceholder(
+                tabID,
+                'Ask Amazon Q a question or use /test to generate unit tests...'
+            )
         } catch (err: any) {
             logger.error('tabOpened failed: %O', err)
             this.messenger.sendErrorMessage(err.message, message.tabID)
@@ -413,8 +423,12 @@ export class TestController {
             this.messenger.sendMessage(`Updated command to \`${updatedCommands}\``, data.tabID, 'prompt')
             await this.checkForInstallationDependencies(data)
             return
-        } else {
+        } else if (data.prompt.startsWith('/test')) {
+            // If the prompt starts with /test, use the original test generation flow
             await this.startTestGen(data, false)
+        } else {
+            // Otherwise, use the Q CLI streaming functionality
+            await this.processQCliStreamingMessage(data)
         }
     }
     // This function takes filePath as input parameter and returns file language
@@ -474,124 +488,127 @@ export class TestController {
                 )
                 return
             }
-            // Truncating the user prompt if the prompt is more than 4096.
-            userPrompt = message.prompt.slice(0, maxUserPromptLength)
+            await this.processQCliStreamingMessage(message)
+            if (session.listOfTestGenerationJobId.length > 1) {
+                // Truncating the user prompt if the prompt is more than 4096.
+                userPrompt = message.prompt.slice(0, maxUserPromptLength)
 
-            // check that the session is authenticated
-            const authState = await AuthUtil.instance.getChatAuthState()
-            if (authState.amazonQ !== 'connected') {
-                void this.messenger.sendAuthNeededExceptionMessage(authState, tabID)
-                session.isAuthenticating = true
-                return
-            }
+                // check that the session is authenticated
+                const authState = await AuthUtil.instance.getChatAuthState()
+                if (authState.amazonQ !== 'connected') {
+                    void this.messenger.sendAuthNeededExceptionMessage(authState, tabID)
+                    session.isAuthenticating = true
+                    return
+                }
 
-            // check that a project/workspace is open
-            const workspaceFolders = vscode.workspace.workspaceFolders
-            if (workspaceFolders === undefined || workspaceFolders.length === 0) {
-                this.messenger.sendUnrecoverableErrorResponse('no-project-found', tabID)
-                return
-            }
+                // check that a project/workspace is open
+                const workspaceFolders = vscode.workspace.workspaceFolders
+                if (workspaceFolders === undefined || workspaceFolders.length === 0) {
+                    this.messenger.sendUnrecoverableErrorResponse('no-project-found', tabID)
+                    return
+                }
 
-            // check if IDE has active file open.
-            const activeEditor = vscode.window.activeTextEditor
-            // also check all open editors and allow this to proceed if only one is open (even if not main focus)
-            const allVisibleEditors = vscode.window.visibleTextEditors
-            const openFileEditors = allVisibleEditors.filter((editor) => editor.document.uri.scheme === 'file')
-            const hasOnlyOneOpenFileSplitView = openFileEditors.length === 1
-            getLogger().debug(`hasOnlyOneOpenSplitView: ${hasOnlyOneOpenFileSplitView}`)
-            // is not a file if the currently highlighted window is not a file, and there is either more than one or no file windows open
-            const isNotFile = activeEditor?.document.uri.scheme !== 'file' && !hasOnlyOneOpenFileSplitView
-            getLogger().debug(`activeEditor: ${activeEditor}, isNotFile: ${isNotFile}`)
-            if (!activeEditor || isNotFile) {
-                this.messenger.sendUnrecoverableErrorResponse(
-                    isNotFile ? 'invalid-file-type' : 'no-open-file-found',
-                    tabID
-                )
-                this.messenger.sendUpdatePlaceholder(
-                    tabID,
-                    'Please open and highlight a source code file in order to generate tests.'
-                )
-                this.messenger.sendChatInputEnabled(tabID, true)
-                this.sessionStorage.getSession().conversationState = ConversationState.WAITING_FOR_INPUT
-                return
-            }
+                // check if IDE has active file open.
+                const activeEditor = vscode.window.activeTextEditor
+                // also check all open editors and allow this to proceed if only one is open (even if not main focus)
+                const allVisibleEditors = vscode.window.visibleTextEditors
+                const openFileEditors = allVisibleEditors.filter((editor) => editor.document.uri.scheme === 'file')
+                const hasOnlyOneOpenFileSplitView = openFileEditors.length === 1
+                getLogger().debug(`hasOnlyOneOpenSplitView: ${hasOnlyOneOpenFileSplitView}`)
+                // is not a file if the currently highlighted window is not a file, and there is either more than one or no file windows open
+                const isNotFile = activeEditor?.document.uri.scheme !== 'file' && !hasOnlyOneOpenFileSplitView
+                getLogger().debug(`activeEditor: ${activeEditor}, isNotFile: ${isNotFile}`)
+                if (!activeEditor || isNotFile) {
+                    this.messenger.sendUnrecoverableErrorResponse(
+                        isNotFile ? 'invalid-file-type' : 'no-open-file-found',
+                        tabID
+                    )
+                    this.messenger.sendUpdatePlaceholder(
+                        tabID,
+                        'Please open and highlight a source code file in order to generate tests.'
+                    )
+                    this.messenger.sendChatInputEnabled(tabID, true)
+                    this.sessionStorage.getSession().conversationState = ConversationState.WAITING_FOR_INPUT
+                    return
+                }
 
-            const fileEditorToTest = hasOnlyOneOpenFileSplitView ? openFileEditors[0] : activeEditor
-            getLogger().debug(`File path: ${fileEditorToTest.document.uri.fsPath}`)
-            filePath = fileEditorToTest.document.uri.fsPath
-            fileName = path.basename(filePath)
-            userFacingMessage = userPrompt
-                ? regenerateTests
-                    ? `${userPrompt}`
-                    : `/test ${userPrompt}`
-                : `/test Generate unit tests for \`${fileName}\``
+                const fileEditorToTest = hasOnlyOneOpenFileSplitView ? openFileEditors[0] : activeEditor
+                getLogger().debug(`File path: ${fileEditorToTest.document.uri.fsPath}`)
+                filePath = fileEditorToTest.document.uri.fsPath
+                fileName = path.basename(filePath)
+                userFacingMessage = userPrompt
+                    ? regenerateTests
+                        ? `${userPrompt}`
+                        : `/test ${userPrompt}`
+                    : `/test Generate unit tests for \`${fileName}\``
 
-            session.hasUserPromptSupplied = userPrompt.length > 0
+                session.hasUserPromptSupplied = userPrompt.length > 0
 
-            // displaying user message prompt in Test tab
-            this.messenger.sendMessage(userFacingMessage, tabID, 'prompt')
-            this.messenger.sendChatInputEnabled(tabID, false)
-            this.sessionStorage.getSession().conversationState = ConversationState.IN_PROGRESS
-            this.messenger.sendUpdatePromptProgress(message.tabID, testGenProgressField)
+                // displaying user message prompt in Test tab
+                this.messenger.sendMessage(userFacingMessage, tabID, 'prompt')
+                this.messenger.sendChatInputEnabled(tabID, false)
+                this.sessionStorage.getSession().conversationState = ConversationState.IN_PROGRESS
+                this.messenger.sendUpdatePromptProgress(message.tabID, testGenProgressField)
 
-            const language = await this.getLanguageForFilePath(filePath)
-            session.fileLanguage = language
-            const workspaceFolder = vscode.workspace.getWorkspaceFolder(fileEditorToTest.document.uri)
+                const language = await this.getLanguageForFilePath(filePath)
+                session.fileLanguage = language
+                const workspaceFolder = vscode.workspace.getWorkspaceFolder(fileEditorToTest.document.uri)
 
-            /*
+                /*
                 For Re:Invent 2024 we are supporting only java and python for unit test generation, rest of the languages shows the similar experience as CWC
             */
-            if (!['java', 'python'].includes(language) || workspaceFolder === undefined) {
-                let unsupportedMessage: string
-                const unsupportedLanguage = language ? language.charAt(0).toUpperCase() + language.slice(1) : ''
-                if (!workspaceFolder) {
-                    // File is outside of workspace
-                    unsupportedMessage = `<span style="color: #EE9D28;">&#9888;<b>I can't generate tests for ${fileName}</b> because the file is outside of workspace scope.<br></span> I can still provide examples, instructions and code suggestions.`
-                } else if (unsupportedLanguage) {
-                    unsupportedMessage = `<span style="color: #EE9D28;">&#9888;<b>I'm sorry, but /test only supports Python and Java</b><br></span> While ${unsupportedLanguage} is not supported, I will generate a suggestion below.`
-                } else {
-                    unsupportedMessage = `<span style="color: #EE9D28;">&#9888;<b>I'm sorry, but /test only supports Python and Java</b><br></span> I will still generate a suggestion below.`
-                }
-                this.messenger.sendMessage(unsupportedMessage, tabID, 'answer')
-                session.isSupportedLanguage = false
-                await this.onCodeGeneration(
-                    session,
-                    userPrompt,
-                    tabID,
-                    fileName,
-                    filePath,
-                    workspaceFolder !== undefined
-                )
-            } else {
-                this.messenger.sendCapabilityCard({ tabID })
-                this.messenger.sendMessage(testGenSummaryMessage(fileName), message.tabID, 'answer-part')
-
-                // Grab the selection from the fileEditorToTest and get the vscode Range
-                const selection = fileEditorToTest.selection
-                let selectionRange = undefined
-                if (
-                    selection.start.line !== selection.end.line ||
-                    selection.start.character !== selection.end.character
-                ) {
-                    selectionRange = new vscode.Range(
-                        selection.start.line,
-                        selection.start.character,
-                        selection.end.line,
-                        selection.end.character
+                if (!['java', 'python'].includes(language) || workspaceFolder === undefined) {
+                    let unsupportedMessage: string
+                    const unsupportedLanguage = language ? language.charAt(0).toUpperCase() + language.slice(1) : ''
+                    if (!workspaceFolder) {
+                        // File is outside of workspace
+                        unsupportedMessage = `<span style="color: #EE9D28;">&#9888;<b>I can't generate tests for ${fileName}</b> because the file is outside of workspace scope.<br></span> I can still provide examples, instructions and code suggestions.`
+                    } else if (unsupportedLanguage) {
+                        unsupportedMessage = `<span style="color: #EE9D28;">&#9888;<b>I'm sorry, but /test only supports Python and Java</b><br></span> While ${unsupportedLanguage} is not supported, I will generate a suggestion below.`
+                    } else {
+                        unsupportedMessage = `<span style="color: #EE9D28;">&#9888;<b>I'm sorry, but /test only supports Python and Java</b><br></span> I will still generate a suggestion below.`
+                    }
+                    this.messenger.sendMessage(unsupportedMessage, tabID, 'answer')
+                    session.isSupportedLanguage = false
+                    await this.onCodeGeneration(
+                        session,
+                        userPrompt,
+                        tabID,
+                        fileName,
+                        filePath,
+                        workspaceFolder !== undefined
                     )
-                }
-                session.isCodeBlockSelected = selectionRange !== undefined
-                session.isSupportedLanguage = true
+                } else {
+                    this.messenger.sendCapabilityCard({ tabID })
+                    this.messenger.sendMessage(testGenSummaryMessage(fileName), message.tabID, 'answer-part')
 
-                /**
-                 * Zip the project
-                 * Create pre-signed URL and upload artifact to S3
-                 * send API request to startTestGeneration API
-                 * Poll from getTestGeneration API
-                 * Get Diff from exportResultArchive API
-                 */
-                ChatSessionManager.Instance.setIsInProgress(true)
-                await startTestGenerationProcess(filePath, message.prompt, tabID, true, selectionRange)
+                    // Grab the selection from the fileEditorToTest and get the vscode Range
+                    const selection = fileEditorToTest.selection
+                    let selectionRange = undefined
+                    if (
+                        selection.start.line !== selection.end.line ||
+                        selection.start.character !== selection.end.character
+                    ) {
+                        selectionRange = new vscode.Range(
+                            selection.start.line,
+                            selection.start.character,
+                            selection.end.line,
+                            selection.end.character
+                        )
+                    }
+                    session.isCodeBlockSelected = selectionRange !== undefined
+                    session.isSupportedLanguage = true
+
+                    /**
+                     * Zip the project
+                     * Create pre-signed URL and upload artifact to S3
+                     * send API request to startTestGeneration API
+                     * Poll from getTestGeneration API
+                     * Get Diff from exportResultArchive API
+                     */
+                    ChatSessionManager.Instance.setIsInProgress(true)
+                    await startTestGenerationProcess(filePath, message.prompt, tabID, true, selectionRange)
+                }
             }
         } catch (err: any) {
             // TODO: refactor error handling to be more robust
@@ -636,6 +653,32 @@ export class TestController {
         if (data.status !== 'InProgress') {
             // eslint-disable-next-line unicorn/no-null
             this.messenger.sendUpdatePromptProgress(data.tabID, null)
+        }
+    }
+
+    /**
+     * Process a user message using Q CLI streaming functionality
+     */
+    private async processQCliStreamingMessage(data: { prompt: string; tabID: string }): Promise<void> {
+        const session = this.sessionStorage.getSession()
+        const logger = getLogger()
+
+        try {
+            logger.debug('Processing Q CLI streaming message: %s', data.prompt)
+
+            // // Check authentication
+            // const authState = await AuthUtil.instance.getChatAuthState()
+            // if (authState.amazonQ !== 'connected') {
+            //     void this.messenger.sendAuthNeededExceptionMessage(authState, data.tabID)
+            //     session.isAuthenticating = true
+            //     return
+            // }
+
+            // Process the user prompt through the streaming service
+            await QCliStreamingService.getInstance().processUserPrompt(data.prompt, data.tabID, session)
+        } catch (error) {
+            logger.error('Error processing Q CLI streaming message: %O', error)
+            this.messenger.sendErrorMessage('Failed to process your request. Please try again.', data.tabID)
         }
     }
 
@@ -1410,7 +1453,10 @@ export class TestController {
         if (session.tabID) {
             getLogger().debug('Setting input state with tabID: %s', session.tabID)
             this.messenger.sendChatInputEnabled(session.tabID, true)
-            this.messenger.sendUpdatePlaceholder(session.tabID, 'Enter "/" for quick actions')
+            this.messenger.sendUpdatePlaceholder(
+                session.tabID,
+                'Ask Amazon Q a question or use /test to generate unit tests...'
+            )
         }
         getLogger().debug(
             'Deleting output.log and temp result directory. testGenerationLogsDir: %s',
