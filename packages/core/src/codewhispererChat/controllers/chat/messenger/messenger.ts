@@ -37,7 +37,7 @@ import { LspController } from '../../../../amazonq/lsp/lspController'
 import { extractCodeBlockLanguage } from '../../../../shared/markdown'
 import { extractAuthFollowUp } from '../../../../amazonq/util/authUtils'
 import { helpMessage } from '../../../../amazonq/webview/ui/texts/constants'
-import { ChatItemButton, ChatItemFormItem, MynahUIDataModel } from '@aws/mynah-ui'
+import { ChatItemButton, ChatItemFormItem, MynahIcons, MynahUIDataModel } from '@aws/mynah-ui'
 
 export type StaticTextResponseType = 'quick-action-help' | 'onboarding-help' | 'transform' | 'help'
 
@@ -307,6 +307,37 @@ export class Messenger {
                                 userIntent: triggerPayload.userIntent,
                                 codeBlockLanguage: undefined,
                                 contextList: undefined,
+                            },
+                            tabID
+                        )
+                    )
+                }
+
+                if (message.includes('```bash')) {
+                    const buttons: ChatItemButton[] = []
+                    buttons.push({
+                        keepCardAfterClick: true,
+                        text: 'Run the bash command in terminal',
+                        id: 'RunCommand',
+                        disabled: false, // allow button to be re-clicked
+                        position: 'outside',
+                        icon: 'comment' as MynahIcons,
+                    })
+
+                    this.dispatcher.sendChatMessage(
+                        new ChatMessage(
+                            {
+                                message: message,
+                                messageType: 'answer-part',
+                                followUps: followUps,
+                                followUpsHeader: undefined,
+                                relatedSuggestions: undefined,
+                                triggerID,
+                                messageID,
+                                userIntent: triggerPayload.userIntent,
+                                codeBlockLanguage: undefined,
+                                contextList: undefined,
+                                buttons,
                             },
                             tabID
                         )

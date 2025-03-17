@@ -160,6 +160,17 @@ export const createMynahUI = (
                 },
             }
         }
+        if (tab?.type === 'cwc' && messageData.codeBlockLanguage === 'bash') {
+            return {
+                'insert-to-cursor': undefined,
+                view_diff: {
+                    id: 'view_diff',
+                    label: 'View Diff',
+                    icon: MynahIcons.EYE,
+                    data: messageData,
+                },
+            }
+        }
         // Show only "Copy" option for codeblocks in Q Test Tab
         if (tab?.type === 'testgen') {
             return {
@@ -352,6 +363,7 @@ export const createMynahUI = (
                     ...(item.followUp !== undefined ? { followUp: item.followUp } : {}),
                     ...(item.fileList !== undefined ? { fileList: item.fileList } : {}),
                     ...(item.header !== undefined ? { header: item.header } : { header: undefined }),
+                    ...(item.buttons !== undefined ? { buttons: item.buttons } : { buttons: undefined }),
                 })
                 if (
                     item.messageId !== undefined &&

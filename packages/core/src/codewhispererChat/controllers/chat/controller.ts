@@ -573,6 +573,11 @@ export class ChatController {
             const newFileDoc = await vscode.workspace.openTextDocument(newFilePath)
             await vscode.window.showTextDocument(newFileDoc)
             telemetry.ui_click.emit({ elementId: 'amazonq_createSavedPrompt' })
+        } else {
+            if (message.action.id === 'RunCommand') {
+                // Call the terminal from here.
+                getLogger().error('Running the command in terminal')
+            }
         }
     }
 
