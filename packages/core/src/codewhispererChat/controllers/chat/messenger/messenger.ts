@@ -326,6 +326,7 @@ export class Messenger {
                         const match = message.match(bashRegex)
                         if (match && match[1]) {
                             bashCommand = match[1].trim()
+                            session.storedBashCommands.push(bashCommand)
                             getLogger().info(`Extracted bash command: ${bashCommand}`)
                         }
 
@@ -442,6 +443,26 @@ export class Messenger {
             },
             tabID,
             requestID
+        )
+    }
+
+    public sendMessage(message: string | undefined, messageID: string, tabID: string) {
+        this.dispatcher.sendChatMessage(
+            new ChatMessage(
+                {
+                    message: message,
+                    messageType: 'answer',
+                    followUps: [],
+                    followUpsHeader: undefined,
+                    relatedSuggestions: undefined,
+                    triggerID: '',
+                    messageID,
+                    userIntent: undefined,
+                    codeBlockLanguage: undefined,
+                    contextList: undefined,
+                },
+                tabID
+            )
         )
     }
 

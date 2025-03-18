@@ -576,11 +576,17 @@ export class ChatController {
 
             terminal.show()
 
+            const session = this.sessionStorage.getSession(message.tabID ?? '')
+            if (!session) {
+                getLogger().error(`No session found for tab: ${message.tabID ?? 'unknown'}`)
+                return
+            }
+            // const allBashCommands = session.storedBashCommands || []
+            const command = session.storedBashCommands[0]
+
             // Get the current path of the terminal
             const currentPath = await this.getCurrentTerminalPath(terminal)
 
-            // Need to input the bashcommand here
-            const command = 'ls'
             let terminalOutput = ''
 
             try {
@@ -613,7 +619,7 @@ export class ChatController {
         }
         getLogger().error(`Last terminal output: ${this.getLastTerminalOutput()}`)
         // TODO: Write a separate function to emit chat messages in messager.ts
-        this.messenger.sendErrorMessage(this.getLastTerminalOutput(), message.tabID ?? '', undefined)
+        this.messenger.sendMessage(this.getLastTerminalOutput(), message.tabID ?? '', message.tabID ?? 'unknown')
     }
 
     private async getCurrentTerminalPath(terminal: vscode.Terminal): Promise<string> {
