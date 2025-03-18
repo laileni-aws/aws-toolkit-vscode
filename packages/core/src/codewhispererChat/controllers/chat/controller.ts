@@ -579,6 +579,7 @@ export class ChatController {
             // Get the current path of the terminal
             const currentPath = await this.getCurrentTerminalPath(terminal)
 
+            // Need to input the bashcommand here
             const command = 'ls'
             let terminalOutput = ''
 
@@ -617,11 +618,12 @@ export class ChatController {
 
     private async getCurrentTerminalPath(terminal: vscode.Terminal): Promise<string> {
         // Create a temporary file to store the path
-        const tmpFile = path.join(os.tmpdir(), `vscode-terminal-path-${Date.now()}.txt`)
+        // const tmpFile = path.join(os.tmpdir(), `vscode-terminal-path-${Date.now()}.txt`)
+        const tmpFile = path.join(os.tmpdir(), `vscode-terminal-path-sample.txt`)
 
         return new Promise<string>((resolve) => {
             // Execute command to write current path to the temp file
-            terminal.sendText(`pwd > "${tmpFile}" && echo "PWDDONE"`)
+            terminal.sendText(`pwd > "${tmpFile}" && echo "Amazon Q"`)
 
             // Wait a bit for the file to be written
             setTimeout(async () => {

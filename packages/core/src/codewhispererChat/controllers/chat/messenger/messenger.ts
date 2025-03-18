@@ -14,6 +14,8 @@ import {
     QuickActionMessage,
     ShowCustomFormMessage,
 } from '../../../view/connector/connector'
+import * as vscode from 'vscode'
+import * as os from 'os'
 import { EditorContextCommandType } from '../../../commands/registerCommands'
 import { ChatResponseStream as qdevChatResponseStream } from '@amzn/amazon-q-developer-streaming-client'
 import {
@@ -38,6 +40,9 @@ import { extractCodeBlockLanguage } from '../../../../shared/markdown'
 import { extractAuthFollowUp } from '../../../../amazonq/util/authUtils'
 import { helpMessage } from '../../../../amazonq/webview/ui/texts/constants'
 import { ChatItemButton, ChatItemFormItem, MynahIcons, MynahUIDataModel } from '@aws/mynah-ui'
+import { ChildProcess } from '../../../../shared/utilities/processUtils'
+import * as path from 'path'
+import fs from '../../../../shared/fs/fs'
 
 export type StaticTextResponseType = 'quick-action-help' | 'onboarding-help' | 'transform' | 'help'
 
@@ -47,6 +52,7 @@ export type MessengerResponseType = {
 }
 
 export class Messenger {
+    private lastTerminalOutput: string = ''
     public constructor(
         private readonly dispatcher: AppToWebViewMessageDispatcher,
         private readonly telemetryHelper: CWCTelemetryHelper
@@ -322,44 +328,89 @@ export class Messenger {
                             bashCommand = match[1].trim()
                             getLogger().info(`Extracted bash command: ${bashCommand}`)
                         }
-                    } catch (error) {
-                        getLogger().error(`Failed to extract bash command: ${error}`)
-                    }
 
-                    const buttons: ChatItemButton[] = []
-                    buttons.push({
-                        keepCardAfterClick: true,
-                        text: 'Run the bash command in terminal',
-                        id: 'RunCommand',
-                        disabled: false, // allow button to be re-clicked
-                        position: 'outside',
-                        icon: 'comment' as MynahIcons,
-                    })
+                        const terminals = vscode.window.terminals
+                        let terminal: vscode.Terminal
 
-                    this.dispatcher.sendChatMessage(
-                        new ChatMessage(
-                            {
-                                message: message,
-                                messageType: 'answer-part',
-                                followUps: followUps,
-                                followUpsHeader: undefined,
-                                relatedSuggestions: undefined,
-                                triggerID,
-                                messageID,
-                                userIntent: triggerPayload.userIntent,
-                                codeBlockLanguage: undefined,
-                                contextList: undefined,
-                                buttons,
-                            },
-                            tabID
+                        if (terminals.length > 0) {
+                            terminal = terminals[0]
+                        } else {
+                            terminal = vscode.window.createTerminal('Amazon Q Terminal')
+                        }
+
+                        terminal.show()
+
+                        // Get the current path of the terminal
+                        const currentPath = await this.getCurrentTerminalPath(terminal)
+
+                        // Need to input the bashcommand here
+                        const command = bashCommand ?? 'ls'
+                        let terminalOutput = ''
+
+                        try {
+                            // Execute the command in the terminal's current directory
+                            const childProcess = new ChildProcess('bash', ['-c', command], {
+                                spawnOptions: { cwd: currentPath },
+                                collect: true,
+                            })
+
+                            const result = await childProcess.run()
+
+                            if (result.exitCode !== 0 || result.error) {
+                                const errorMessage = result.error ? result.error.message : result.stderr
+                                getLogger().error(`Error executing command: ${errorMessage}`)
+                                terminal.sendText(`echo "Error executing command: ${errorMessage}"`)
+                                this.lastTerminalOutput = `Error: ${errorMessage}`
+                            } else {
+                                terminalOutput = result.stdout.trim()
+                                terminal.sendText(command)
+                                getLogger().info(`Command executed: ${command}`)
+                                getLogger().info(`Command output: ${terminalOutput}`)
+                                this.lastTerminalOutput = terminalOutput
+                            }
+                        } catch (error) {
+                            getLogger().error(`Failed to extract bash command: ${error}`)
+                        }
+
+                        const buttons: ChatItemButton[] = []
+                        buttons.push({
+                            keepCardAfterClick: true,
+                            text: 'Run the bash command in terminal',
+                            id: 'RunCommand',
+                            disabled: false, // allow button to be re-clicked
+                            position: 'outside',
+                            icon: 'comment' as MynahIcons,
+                        })
+
+                        this.dispatcher.sendChatMessage(
+                            new ChatMessage(
+                                {
+                                    message: message,
+                                    messageType: 'answer-part',
+                                    followUps: followUps,
+                                    followUpsHeader: undefined,
+                                    relatedSuggestions: undefined,
+                                    triggerID,
+                                    messageID,
+                                    userIntent: triggerPayload.userIntent,
+                                    codeBlockLanguage: undefined,
+                                    contextList: undefined,
+                                    // buttons,
+                                },
+                                tabID
+                            )
                         )
-                    )
+                    } catch (error) {
+                        const errorMessage = error instanceof Error ? error.message : String(error)
+                        getLogger().error(`Error executing command: ${errorMessage}`)
+                        // terminal.sendText(`echo "Error executing command: ${errorMessage}"`)
+                        this.lastTerminalOutput = `Error: ${errorMessage}`
+                    }
                 }
-
                 this.dispatcher.sendChatMessage(
                     new ChatMessage(
                         {
-                            message: undefined,
+                            message: message.includes('```bash') ? this.lastTerminalOutput : undefined,
                             messageType: 'answer',
                             followUps: followUps,
                             followUpsHeader: undefined,
@@ -394,6 +445,34 @@ export class Messenger {
                     totalNumberOfCodeBlocksInResponse: await this.countTotalNumberOfCodeBlocks(message),
                 })
             })
+    }
+
+    private async getCurrentTerminalPath(terminal: vscode.Terminal): Promise<string> {
+        // Create a temporary file to store the path
+        // const tmpFile = path.join(os.tmpdir(), `vscode-terminal-path-${Date.now()}.txt`)
+        const tmpFile = path.join(os.tmpdir(), `vscode-terminal-path-sample.txt`)
+
+        return new Promise<string>((resolve) => {
+            // Execute command to write current path to the temp file
+            terminal.sendText(`pwd > "${tmpFile}" && echo "Amazon Q"`)
+
+            // Wait a bit for the file to be written
+            setTimeout(async () => {
+                try {
+                    if (await fs.exists(tmpFile)) {
+                        const pathContent = await fs.readFileText(tmpFile)
+                        await fs.delete(tmpFile) // Clean up
+                        resolve(pathContent.trim())
+                    } else {
+                        // Fallback if file wasn't created
+                        resolve(os.homedir())
+                    }
+                } catch (err) {
+                    getLogger().error(`Failed to read terminal path: ${err}`)
+                    resolve(os.homedir())
+                }
+            }, 500) // Give it 500ms to write the file
+        })
     }
 
     public sendErrorMessage(errorMessage: string | undefined, tabID: string, requestID: string | undefined) {
