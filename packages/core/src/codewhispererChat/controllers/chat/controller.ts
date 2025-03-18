@@ -4,6 +4,9 @@
  */
 import * as path from 'path'
 import * as vscode from 'vscode'
+import * as os from 'os'
+import { fs } from '../../../shared/fs/fs'
+import { ChildProcess } from '../../../shared/utilities/processUtils'
 import { Event as VSCodeEvent, Uri, workspace, window, ViewColumn, Position, Selection } from 'vscode'
 import { EditorContextExtractor } from '../../editor/context/extractor'
 import { ChatSessionStorage } from '../../storages/chatSession'
@@ -68,7 +71,6 @@ import { MynahIconsType, MynahUIDataModel, QuickActionCommand } from '@aws/mynah
 import { LspClient } from '../../../amazonq/lsp/lspClient'
 import { AdditionalContextPrompt, ContextCommandItem, ContextCommandItemType } from '../../../amazonq/lsp/types'
 import { workspaceCommand } from '../../../amazonq/webview/ui/tabs/constants'
-import fs from '../../../shared/fs/fs'
 import { FeatureConfigProvider, Features } from '../../../shared/featureConfig'
 import { i18n } from '../../../shared/i18n-helper'
 import {
@@ -132,6 +134,8 @@ export interface ChatControllerMessageListeners {
 }
 
 export class ChatController {
+    // Store the last terminal output
+    private lastTerminalOutput: string = ''
     private readonly sessionStorage: ChatSessionStorage
     private readonly triggerEventsStorage: TriggerEventsStorage
     private readonly messenger: Messenger
@@ -560,25 +564,87 @@ export class ChatController {
     }
 
     private async processCustomFormAction(message: CustomFormActionMessage) {
-        if (message.action.id === 'submit-create-prompt') {
-            const userPromptsDirectory = getUserPromptsDirectory()
+        if (message.action.id === 'RunCommand') {
+            const terminals = vscode.window.terminals
+            let terminal: vscode.Terminal
 
-            const title = message.action.formItemValues?.['prompt-name']
-            const newFilePath = path.join(
-                userPromptsDirectory,
-                title ? `${title}${promptFileExtension}` : `default${promptFileExtension}`
-            )
-            const newFileContent = new Uint8Array(Buffer.from(''))
-            await fs.writeFile(newFilePath, newFileContent)
-            const newFileDoc = await vscode.workspace.openTextDocument(newFilePath)
-            await vscode.window.showTextDocument(newFileDoc)
-            telemetry.ui_click.emit({ elementId: 'amazonq_createSavedPrompt' })
-        } else {
-            if (message.action.id === 'RunCommand') {
-                // Call the terminal from here.
-                getLogger().error('Running the command in terminal')
+            if (terminals.length > 0) {
+                terminal = terminals[0]
+            } else {
+                terminal = vscode.window.createTerminal('Amazon Q Terminal')
+            }
+
+            terminal.show()
+
+            // Get the current path of the terminal
+            const currentPath = await this.getCurrentTerminalPath(terminal)
+
+            const command = 'ls'
+            let terminalOutput = ''
+
+            try {
+                // Execute the command in the terminal's current directory
+                const childProcess = new ChildProcess('bash', ['-c', command], {
+                    spawnOptions: { cwd: currentPath },
+                    collect: true,
+                })
+
+                const result = await childProcess.run()
+
+                if (result.exitCode !== 0 || result.error) {
+                    const errorMessage = result.error ? result.error.message : result.stderr
+                    getLogger().error(`Error executing command: ${errorMessage}`)
+                    terminal.sendText(`echo "Error executing command: ${errorMessage}"`)
+                    this.lastTerminalOutput = `Error: ${errorMessage}`
+                } else {
+                    terminalOutput = result.stdout.trim()
+                    terminal.sendText(command)
+                    getLogger().info(`Command executed: ${command}`)
+                    getLogger().info(`Command output: ${terminalOutput}`)
+                    this.lastTerminalOutput = terminalOutput
+                }
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error)
+                getLogger().error(`Error executing command: ${errorMessage}`)
+                terminal.sendText(`echo "Error executing command: ${errorMessage}"`)
+                this.lastTerminalOutput = `Error: ${errorMessage}`
             }
         }
+        getLogger().error(`Last terminal output: ${this.getLastTerminalOutput()}`)
+        // TODO: Write a separate function to emit chat messages in messager.ts
+        this.messenger.sendErrorMessage(this.getLastTerminalOutput(), message.tabID ?? '', undefined)
+    }
+
+    private async getCurrentTerminalPath(terminal: vscode.Terminal): Promise<string> {
+        // Create a temporary file to store the path
+        const tmpFile = path.join(os.tmpdir(), `vscode-terminal-path-${Date.now()}.txt`)
+
+        return new Promise<string>((resolve) => {
+            // Execute command to write current path to the temp file
+            terminal.sendText(`pwd > "${tmpFile}" && echo "PWDDONE"`)
+
+            // Wait a bit for the file to be written
+            setTimeout(async () => {
+                try {
+                    if (await fs.exists(tmpFile)) {
+                        const pathContent = await fs.readFileText(tmpFile)
+                        await fs.delete(tmpFile) // Clean up
+                        resolve(pathContent.trim())
+                    } else {
+                        // Fallback if file wasn't created
+                        resolve(os.homedir())
+                    }
+                } catch (err) {
+                    getLogger().error(`Failed to read terminal path: ${err}`)
+                    resolve(os.homedir())
+                }
+            }, 500) // Give it 500ms to write the file
+        })
+    }
+
+    // Get the last terminal output
+    public getLastTerminalOutput(): string {
+        return this.lastTerminalOutput
     }
 
     private async processContextSelected(message: ContextSelectedMessage) {

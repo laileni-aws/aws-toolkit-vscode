@@ -314,6 +314,18 @@ export class Messenger {
                 }
 
                 if (message.includes('```bash')) {
+                    let bashCommand: string | undefined
+                    try {
+                        const bashRegex = /```bash\s*([\s\S]*?)```/
+                        const match = message.match(bashRegex)
+                        if (match && match[1]) {
+                            bashCommand = match[1].trim()
+                            getLogger().info(`Extracted bash command: ${bashCommand}`)
+                        }
+                    } catch (error) {
+                        getLogger().error(`Failed to extract bash command: ${error}`)
+                    }
+
                     const buttons: ChatItemButton[] = []
                     buttons.push({
                         keepCardAfterClick: true,
