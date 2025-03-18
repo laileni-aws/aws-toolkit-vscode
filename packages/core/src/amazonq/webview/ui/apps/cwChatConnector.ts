@@ -276,7 +276,7 @@ export class Connector extends BaseConnector {
         }
         // TODO: Add more cases for Accept/Reject/viewDiff.
         switch (action.id) {
-            case 'Provide-Feedback':
+            case 'RunCommand':
                 answer.buttons = [
                     {
                         keepCardAfterClick: true,

@@ -329,49 +329,6 @@ export class Messenger {
                             getLogger().info(`Extracted bash command: ${bashCommand}`)
                         }
 
-                        const terminals = vscode.window.terminals
-                        let terminal: vscode.Terminal
-
-                        if (terminals.length > 0) {
-                            terminal = terminals[0]
-                        } else {
-                            terminal = vscode.window.createTerminal('Amazon Q Terminal')
-                        }
-
-                        terminal.show()
-
-                        // Get the current path of the terminal
-                        const currentPath = await this.getCurrentTerminalPath(terminal)
-
-                        // Need to input the bashcommand here
-                        const command = bashCommand ?? 'ls'
-                        let terminalOutput = ''
-
-                        try {
-                            // Execute the command in the terminal's current directory
-                            const childProcess = new ChildProcess('bash', ['-c', command], {
-                                spawnOptions: { cwd: currentPath },
-                                collect: true,
-                            })
-
-                            const result = await childProcess.run()
-
-                            if (result.exitCode !== 0 || result.error) {
-                                const errorMessage = result.error ? result.error.message : result.stderr
-                                getLogger().error(`Error executing command: ${errorMessage}`)
-                                terminal.sendText(`echo "Error executing command: ${errorMessage}"`)
-                                this.lastTerminalOutput = `Error: ${errorMessage}`
-                            } else {
-                                terminalOutput = result.stdout.trim()
-                                terminal.sendText(command)
-                                getLogger().info(`Command executed: ${command}`)
-                                getLogger().info(`Command output: ${terminalOutput}`)
-                                this.lastTerminalOutput = terminalOutput
-                            }
-                        } catch (error) {
-                            getLogger().error(`Failed to extract bash command: ${error}`)
-                        }
-
                         const buttons: ChatItemButton[] = []
                         buttons.push({
                             keepCardAfterClick: true,
@@ -395,7 +352,7 @@ export class Messenger {
                                     userIntent: triggerPayload.userIntent,
                                     codeBlockLanguage: undefined,
                                     contextList: undefined,
-                                    // buttons,
+                                    buttons,
                                 },
                                 tabID
                             )
@@ -410,7 +367,8 @@ export class Messenger {
                 this.dispatcher.sendChatMessage(
                     new ChatMessage(
                         {
-                            message: message.includes('```bash') ? this.lastTerminalOutput : undefined,
+                            // message: message.includes('```bash') ? this.lastTerminalOutput : undefined,
+                            message: undefined,
                             messageType: 'answer',
                             followUps: followUps,
                             followUpsHeader: undefined,
@@ -446,7 +404,7 @@ export class Messenger {
                 })
             })
     }
-
+    /*
     private async getCurrentTerminalPath(terminal: vscode.Terminal): Promise<string> {
         // Create a temporary file to store the path
         // const tmpFile = path.join(os.tmpdir(), `vscode-terminal-path-${Date.now()}.txt`)
@@ -474,7 +432,7 @@ export class Messenger {
             }, 500) // Give it 500ms to write the file
         })
     }
-
+*/
     public sendErrorMessage(errorMessage: string | undefined, tabID: string, requestID: string | undefined) {
         this.showChatExceptionMessage(
             {
