@@ -20,6 +20,7 @@ import {
     ChatResponseStream as cwChatResponseStream,
     CodeWhispererStreamingServiceException,
     SupplementaryWebLink,
+    ToolUse,
 } from '@amzn/codewhisperer-streaming'
 import { ChatMessage, ErrorMessage, FollowUp, Suggestion } from '../../../view/connector/connector'
 import { ChatSession } from '../../../clients/chat/v0/chat'
@@ -129,6 +130,9 @@ export class Messenger {
         let followUps: FollowUp[] = []
         let relatedSuggestions: Suggestion[] = []
         let codeBlockLanguage: string = 'plaintext'
+        let toolUseInput = ''
+        // TODO: Should this be an array?
+        const toolUse: ToolUse = { toolUseId: undefined, name: undefined, input: undefined }
 
         if (response.message === undefined) {
             throw new ToolkitError(
@@ -156,7 +160,7 @@ export class Messenger {
         })
 
         const eventCounts = new Map<string, number>()
-        waitUntil(
+        await waitUntil(
             async () => {
                 for await (const chatEvent of response.message!) {
                     for (const key of keys(chatEvent)) {
@@ -184,6 +188,41 @@ export class Messenger {
                                 information: `Reference code under **${reference.licenseName}** license from repository \`${reference.repository}\``,
                             })),
                         ]
+                    }
+
+                    const cwChatEvent: cwChatResponseStream = chatEvent
+                    if (
+                        cwChatEvent.toolUseEvent?.input !== undefined &&
+                        cwChatEvent.toolUseEvent.input.length > 0 &&
+                        !cwChatEvent.toolUseEvent.stop
+                    ) {
+                        toolUseInput += cwChatEvent.toolUseEvent.input
+                    }
+
+                    if (cwChatEvent.toolUseEvent?.stop) {
+                        toolUse.input = JSON.parse(toolUseInput)
+                        toolUse.toolUseId = cwChatEvent.toolUseEvent.toolUseId ?? ''
+                        toolUse.name = cwChatEvent.toolUseEvent.name ?? ''
+                        session.setToolUse(toolUse)
+
+                        this.dispatcher.sendChatMessage(
+                            new ChatMessage(
+                                {
+                                    message: `Reading the file at \`${(toolUse.input as any)?.path}\` using the \`fs_read\` tool.`,
+                                    messageType: 'answer',
+                                    followUps: undefined,
+                                    followUpsHeader: undefined,
+                                    relatedSuggestions: undefined,
+                                    codeReference,
+                                    triggerID,
+                                    messageID: toolUse.toolUseId,
+                                    userIntent: triggerPayload.userIntent,
+                                    codeBlockLanguage: codeBlockLanguage,
+                                    contextList: undefined,
+                                },
+                                tabID
+                            )
+                        )
                     }
 
                     if (
@@ -349,6 +388,14 @@ export class Messenger {
                     responseCode,
                     codeReferenceCount: codeReference.length,
                     totalNumberOfCodeBlocksInResponse: await this.countTotalNumberOfCodeBlocks(message),
+                })
+
+                session.pushToChatHistory({
+                    assistantResponseMessage: {
+                        content: message,
+                        toolUses: toolUse.toolUseId === undefined ? undefined : [toolUse],
+                        messageId: messageID,
+                    },
                 })
             })
     }
