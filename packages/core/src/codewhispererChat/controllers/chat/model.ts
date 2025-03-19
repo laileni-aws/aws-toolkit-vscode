@@ -4,7 +4,7 @@
  */
 
 import * as vscode from 'vscode'
-import { AdditionalContentEntry, RelevantTextDocument, UserIntent } from '@amzn/codewhisperer-streaming'
+import { AdditionalContentEntry, RelevantTextDocument, ToolResult, UserIntent } from '@amzn/codewhisperer-streaming'
 import { MatchPolicy, CodeQuery } from '../../clients/chat/v0/model'
 import { Selection } from 'vscode'
 import { TabOpenType } from '../../../amazonq/webview/ui/storages/tabsStorage'
@@ -197,6 +197,7 @@ export interface TriggerPayload {
     additionalContextLengths?: AdditionalContextLengths
     truncatedAdditionalContextLengths?: AdditionalContextLengths
     workspaceRulesCount?: number
+    toolResults?: ToolResult[]
 }
 
 export type AdditionalContextLengths = {

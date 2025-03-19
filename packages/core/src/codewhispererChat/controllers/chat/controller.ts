@@ -51,7 +51,7 @@ import { UserIntentRecognizer } from './userIntent/userIntentRecognizer'
 import { CWCTelemetryHelper, recordTelemetryChatRunCommand } from './telemetryHelper'
 import { CodeWhispererTracker } from '../../../codewhisperer/tracker/codewhispererTracker'
 import { getLogger } from '../../../shared/logger/logger'
-import { triggerPayloadToChatRequest } from './chatRequest/converter'
+import { triggerPayloadToAgenticChatRequest, triggerPayloadToChatRequest } from './chatRequest/converter'
 import { AuthUtil } from '../../../codewhisperer/util/authUtil'
 import { openUrl } from '../../../shared/utilities/vsCodeUtils'
 import { randomUUID } from '../../../shared/crypto'
@@ -81,6 +81,8 @@ import {
 } from '../../constants'
 import { ChatSession } from '../../clients/chat/v0/chat'
 import { tempDirPath } from '../../../shared/filesystemUtilities'
+import { FsRead, FsReadParams } from '../../tools/fsRead'
+import { tryGetCurrentWorkingDirectory } from '../../../shared/utilities/workspaceUtils'
 
 export interface ChatControllerMessagePublishers {
     readonly processPromptChatMessage: MessagePublisher<PromptMessage>
@@ -868,7 +870,7 @@ export class ChatController {
     private async processPromptMessageAsNewThread(message: PromptMessage) {
         this.editorContextExtractor
             .extractContextForTrigger('ChatMessage')
-            .then((context) => {
+            .then(async (context) => {
                 const triggerID = randomUUID()
                 this.triggerEventsStorage.addTriggerEvent({
                     id: triggerID,
@@ -877,7 +879,7 @@ export class ChatController {
                     type: 'chat_message',
                     context,
                 })
-                return this.generateResponse(
+                await this.generateResponse(
                     {
                         message: message.message,
                         trigger: ChatTriggerType.ChatMessage,
@@ -892,8 +894,57 @@ export class ChatController {
                         customization: getSelectedCustomization(),
                         context: message.context,
                     },
-                    triggerID
+                    triggerID,
+                    true
                 )
+
+                const session = this.sessionStorage.getSession(message.tabID)
+                while (true) {
+                    const toolUse = session.toolUse
+                    if (!toolUse || !toolUse.input) {
+                        break
+                    }
+                    session.setToolUse(undefined)
+
+                    let result: any
+                    switch (toolUse.name) {
+                        case 'fs_read': {
+                            const fsRead = new FsRead(toolUse.input as unknown as FsReadParams)
+                            result = await fsRead.invoke({
+                                env: { currentDir: () => tryGetCurrentWorkingDirectory() },
+                            })
+                            break
+                        }
+                        default:
+                            break
+                    }
+
+                    await this.generateResponse(
+                        {
+                            message: '',
+                            trigger: ChatTriggerType.ChatMessage,
+                            query: message.message,
+                            codeSelection: context?.focusAreaContext?.selectionInsideExtendedCodeBlock,
+                            fileText: context?.focusAreaContext?.extendedCodeBlock,
+                            fileLanguage: context?.activeFileContext?.fileLanguage,
+                            filePath: context?.activeFileContext?.filePath,
+                            matchPolicy: context?.activeFileContext?.matchPolicy,
+                            codeQuery: context?.focusAreaContext?.names,
+                            userIntent: this.userIntentRecognizer.getFromPromptChatMessage(message),
+                            customization: getSelectedCustomization(),
+                            context: message.context,
+                            toolResults: [
+                                {
+                                    content: [{ text: result.output.content }],
+                                    toolUseId: toolUse.toolUseId,
+                                    status: 'success',
+                                },
+                            ],
+                        },
+                        triggerID,
+                        true
+                    )
+                }
             })
             .catch((e) => {
                 this.processException(e, message.tabID)
@@ -1078,7 +1129,8 @@ export class ChatController {
 
     private async generateResponse(
         triggerPayload: TriggerPayload & { projectContextQueryLatencyMs?: number },
-        triggerID: string
+        triggerID: string,
+        agentic?: boolean
     ) {
         const triggerEvent = this.triggerEventsStorage.getTriggerEvent(triggerID)
         if (triggerEvent === undefined) {
@@ -1091,7 +1143,7 @@ export class ChatController {
 
         if (triggerEvent.tabID === undefined) {
             setTimeout(() => {
-                this.generateResponse(triggerPayload, triggerID).catch((e) => {
+                this.generateResponse(triggerPayload, triggerID, agentic).catch((e) => {
                     getLogger().error('generateResponse failed: %s', (e as Error).message)
                 })
             }, 20)
@@ -1156,7 +1208,9 @@ export class ChatController {
 
         triggerPayload.documentReferences = this.mergeRelevantTextDocuments(triggerPayload.relevantTextDocuments || [])
 
-        const request = triggerPayloadToChatRequest(triggerPayload)
+        const request = agentic
+            ? triggerPayloadToAgenticChatRequest(triggerPayload, session.chatHistory)
+            : triggerPayloadToChatRequest(triggerPayload)
 
         if (triggerPayload.documentReferences !== undefined) {
             const relativePathsOfMergedRelevantDocuments = triggerPayload.documentReferences.map(
@@ -1210,6 +1264,7 @@ export class ChatController {
                     response.$metadata.requestId
                 } metadata: ${inspect(response.$metadata, { depth: 12 })}`
             )
+            session.pushToChatHistory(request.conversationState.currentMessage)
             await this.messenger.sendAIResponse(response, session, tabID, triggerID, triggerPayload)
         } catch (e: any) {
             this.telemetryHelper.recordMessageResponseError(triggerPayload, tabID, getHttpStatusCode(e) ?? 0)
