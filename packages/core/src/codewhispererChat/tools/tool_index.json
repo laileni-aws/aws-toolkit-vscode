@@ -11,10 +11,10 @@
                 },
                 "cwd": {
                     "type": "string",
-                    "description": "Optional parameter to set the current working directory for the bash command. If not provided, the tool will default to the user's home directory."
+                    "description": "Parameter to set the current working directory for the bash command."
                 }
             },
-            "required": ["command"]
+            "required": ["command", "cwd"]
         }
     },
     "fs_read": {
@@ -71,6 +71,20 @@
                 }
             },
             "required": ["command", "path"]
+        }
+    },
+    "open_file": {
+        "name": "open_file",
+        "description": "A tool for opening a file in a new IDE editor tab for a given `path`. If the file is already opened in a tab, it will make the tab active. Don't make any assumptions about the tabs that are currently opened because the active tab can be changed by the user at any time.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path to the file to open in a new tab."
+                }
+            },
+            "required": ["path"]
         }
     }
 }

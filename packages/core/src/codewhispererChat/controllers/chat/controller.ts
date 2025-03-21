@@ -83,6 +83,7 @@ import { ChatSession } from '../../clients/chat/v0/chat'
 import { FsRead, FsReadParams } from '../../tools/fsRead'
 import FsWrite, { DefaultContext, FsWriteParams } from '../../tools/fsWrite'
 import ExecuteBash, { ExecuteBashParams } from '../../tools/executeBash'
+import { openFile, OpenFileParams } from '../../tools/openFile'
 
 export interface ChatControllerMessagePublishers {
     readonly processPromptChatMessage: MessagePublisher<PromptMessage>
@@ -899,6 +900,10 @@ export class ChatController {
                             const fsWrite = new FsWrite(toolUse.input as unknown as FsWriteParams)
                             const ctx = new DefaultContext()
                             result = await fsWrite.invoke(ctx, process.stdout)
+                            break
+                        }
+                        case 'open_file': {
+                            result = await openFile(toolUse.input as unknown as OpenFileParams)
                             break
                         }
                         default:

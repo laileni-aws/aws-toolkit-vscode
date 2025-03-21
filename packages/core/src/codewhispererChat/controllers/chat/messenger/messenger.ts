@@ -476,6 +476,9 @@ at \`${input.path}\` using the \`fs_write\` tool.`
                 }
             }
         }
+        if (toolUse.name === 'open_file') {
+            return `Opening the file at \`${(toolUse.input as any)?.path}\` using the \`open_file\` tool.`
+        }
     }
 
     public sendErrorMessage(errorMessage: string | undefined, tabID: string, requestID: string | undefined) {

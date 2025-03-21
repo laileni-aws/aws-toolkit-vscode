@@ -17,7 +17,6 @@ import { ChatTriggerType, TriggerPayload } from '../model'
 import { undefinedIfEmpty } from '../../../../shared/utilities/textUtilities'
 import toolsJson from '../../../tools/tool_index.json'
 import vscode from 'vscode'
-import { tryGetCurrentWorkingDirectory } from '../../../../shared/utilities/workspaceUtils'
 
 const fqnNameSizeDownLimit = 1
 const fqnNameSizeUpLimit = 256
@@ -225,7 +224,6 @@ export function triggerPayloadToAgenticChatRequest(
                         },
                         envState: {
                             operatingSystem,
-                            currentWorkingDirectory: tryGetCurrentWorkingDirectory(),
                             environmentVariables: [],
                         },
                         additionalContext: triggerPayload.additionalContents,
