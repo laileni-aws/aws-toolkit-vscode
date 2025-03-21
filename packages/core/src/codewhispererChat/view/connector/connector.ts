@@ -208,6 +208,7 @@ export interface ChatMessageProps {
     readonly userIntent: string | undefined
     readonly codeBlockLanguage: string | undefined
     readonly contextList: DocumentReference[] | undefined
+    readonly buttons?: ChatItemButton[]
 }
 
 export class ChatMessage extends UiMessage {
@@ -223,6 +224,7 @@ export class ChatMessage extends UiMessage {
     readonly userIntent: string | undefined
     readonly codeBlockLanguage: string | undefined
     readonly contextList: DocumentReference[] | undefined
+    readonly buttons?: ChatItemButton[]
     override type = 'chatMessage'
 
     constructor(props: ChatMessageProps, tabID: string) {
@@ -238,6 +240,7 @@ export class ChatMessage extends UiMessage {
         this.userIntent = props.userIntent
         this.codeBlockLanguage = props.codeBlockLanguage
         this.contextList = props.contextList
+        this.buttons = props.buttons
     }
 }
 
@@ -316,6 +319,10 @@ export class AppToWebViewMessageDispatcher {
     }
 
     public sendShowCustomFormMessage(message: ShowCustomFormMessage) {
+        this.appsToWebViewMessagePublisher.publish(message)
+    }
+
+    public sendCustomFormActionMessage(message: CustomFormActionMessage) {
         this.appsToWebViewMessagePublisher.publish(message)
     }
 }

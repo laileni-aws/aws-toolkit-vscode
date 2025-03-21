@@ -9,6 +9,7 @@ import {
     AuthNeededException,
     CodeReference,
     ContextCommandData,
+    CustomFormActionMessage,
     EditorContextCommandMessage,
     OpenSettingsMessage,
     QuickActionMessage,
@@ -40,7 +41,7 @@ import { extractAuthFollowUp } from '../../../../amazonq/util/authUtils'
 import { helpMessage } from '../../../../amazonq/webview/ui/texts/constants'
 import { ChatItemButton, ChatItemFormItem, MynahUIDataModel } from '@aws/mynah-ui'
 import { FsWriteParams } from '../../../tools/fsWrite'
-import { ExecuteBashParams } from '../../../tools/executeBash'
+import ExecuteBash, { ExecuteBashParams } from '../../../tools/executeBash'
 
 export type StaticTextResponseType = 'quick-action-help' | 'onboarding-help' | 'transform' | 'help'
 
@@ -208,6 +209,7 @@ export class Messenger {
                         session.setToolUse(toolUse)
 
                         const message = this.getToolUseMessage(toolUse)
+                        const isConfirmationRequired = this.getIsConfirmationRequired(toolUse)
 
                         this.dispatcher.sendChatMessage(
                             new ChatMessage(
@@ -223,10 +225,20 @@ export class Messenger {
                                     userIntent: triggerPayload.userIntent,
                                     codeBlockLanguage: codeBlockLanguage,
                                     contextList: undefined,
+                                    buttons: isConfirmationRequired
+                                        ? [{ id: 'confirm-tool-use', text: 'Confirm' }]
+                                        : [],
                                 },
                                 tabID
                             )
                         )
+                        if (!isConfirmationRequired) {
+                            this.dispatcher.sendCustomFormActionMessage(
+                                new CustomFormActionMessage(tabID, {
+                                    id: 'confirm-tool-use',
+                                })
+                            )
+                        }
                     }
 
                     if (
@@ -403,10 +415,22 @@ export class Messenger {
                 })
             })
     }
+    // TODO: Make this cleaner
+    private getIsConfirmationRequired(toolUse: ToolUse) {
+        if (toolUse.name === 'execute_bash') {
+            const executeBash = new ExecuteBash(toolUse.input as unknown as ExecuteBashParams)
+            return executeBash.requiresAcceptance()
+        }
+        return toolUse.name === 'fs_write'
+    }
     private getToolUseMessage(toolUse: ToolUse) {
         if (toolUse.name === 'execute_bash') {
             const input = toolUse.input as unknown as ExecuteBashParams
-            return `Executing the bash command \`${input.command}\` using the \`execute_bash\` tool.`
+            return `Executing the bash command
+\`\`\`bash
+${input.command}
+\`\`\`
+using the \`execute_bash\` tool.`
         }
         if (toolUse.name === 'fs_read') {
             return `Reading the file at \`${(toolUse.input as any)?.path}\` using the \`fs_read\` tool.`

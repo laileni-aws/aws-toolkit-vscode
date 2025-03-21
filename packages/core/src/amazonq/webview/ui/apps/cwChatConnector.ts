@@ -96,6 +96,7 @@ export class Connector extends BaseConnector {
                 userIntent: messageData.userIntent,
                 codeBlockLanguage: messageData.codeBlockLanguage,
                 contextList: messageData.contextList,
+                buttons: messageData.buttons,
             }
 
             // If it is not there we will not set it
