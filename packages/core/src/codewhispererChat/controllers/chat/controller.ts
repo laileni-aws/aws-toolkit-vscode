@@ -49,7 +49,6 @@ import {
     CodeWhispererStreamingServiceException,
     Origin,
     ToolResult,
-    ToolUse,
     ToolResultStatus,
 } from '@amzn/codewhisperer-streaming'
 import { UserIntentRecognizer } from './userIntent/userIntentRecognizer'
@@ -668,26 +667,37 @@ export class ChatController {
         const session = this.sessionStorage.getSession(message.tabID)
         // Check if user clicked on filePath in the contextList or in the fileListTree and perform the functionality accordingly.
         if (session.showDiffOnFileWrite) {
-            const input = session.toolUse?.input as unknown as FsWriteParams
-            input.path = session.tempFilePath ?? ''
-            // await FsWrite.validate(input)
-            // await FsWrite.invoke(input)
-            if (!session.toolUse) {
+            // If we have existiong filePath copy context of existing file path to tempFilePath
+            const filePath = session.filePath ?? message.filePath
+            const fileExists = await fs.existsFile(filePath)
+            if (!session.tempFilePath) {
                 return
             }
-            const result = ToolUtils.tryFromToolUse(session.toolUse)
+            if (fileExists) {
+                // Copy the file content into the session.tempFilePath file
+                const fileContent = await fs.readFileText(filePath)
+                await fs.writeFile(session.tempFilePath, fileContent)
+            }
+
+            // Create a deep clone of the toolUse object
+            const clonedToolUse = structuredClone(session.toolUse)
+            if (!clonedToolUse) {
+                return
+            }
+            const input = clonedToolUse.input as unknown as FsWriteParams
+            input.path = session.tempFilePath
+            const result = ToolUtils.tryFromToolUse(clonedToolUse)
             if (!('type' in result)) {
                 return
             }
             const tool: Tool = result
             await ToolUtils.validate(tool)
 
-            const chatStream = new ChatStream(this.messenger, message.tabID, randomUUID(), session.toolUse?.toolUseId)
+            const chatStream = new ChatStream(this.messenger, message.tabID, randomUUID(), clonedToolUse?.toolUseId)
             const output = await ToolUtils.invoke(tool, chatStream)
             // eslint-disable-next-line @typescript-eslint/no-base-to-string
             getLogger().info(`${output}`)
-            const filePath = session.filePath ?? message.filePath
-            const fileExists = await fs.existsFile(filePath)
+
             // Check if fileExists=false, If yes, return instead of showing broken diff experience.
             if (!session.tempFilePath) {
                 void vscode.window.showInformationMessage('Generated code changes have been reviewed and processed.')
@@ -1005,6 +1015,13 @@ export class ChatController {
                 if (toolUse?.name === 'fsWrite' && this.sessionStorage.getSession(tabID).filePath) {
                     const filePath = this.sessionStorage.getSession(tabID).filePath ?? ''
                     await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath))
+                    if (vscode.window.tabGroups.activeTabGroup.activeTab?.label.includes(amazonQTabSuffix)) {
+                        await vscode.commands.executeCommand('workbench.action.closeActiveEditor')
+                    }
+                    if (session.tempFilePath) {
+                        await fs.delete(session.tempFilePath)
+                    }
+                    session.setTempFilePath(undefined)
                 }
                 await this.generateResponse(
                     {
