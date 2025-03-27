@@ -400,33 +400,6 @@ export class ChatController {
             })
     }
 
-    // private async processAcceptCodeDiff(message: CustomFormActionMessage) {
-    //     const session = this.sessionStorage.getSession(message.tabID ?? '')
-    //     const filePath = session.filePath ?? ''
-    //     const fileExists = await fs.existsFile(filePath)
-    //     const tempFilePath = session.tempFilePath
-    //     const tempFileExists = await fs.existsFile(tempFilePath ?? '')
-    //     if (fileExists && tempFileExists) {
-    //         const fileContent = await fs.readFileText(filePath)
-    //         const tempFileContent = await fs.readFileText(tempFilePath ?? '')
-    //         if (fileContent !== tempFileContent) {
-    //             await fs.writeFile(filePath, tempFileContent)
-    //         }
-    //         await fs.delete(tempFilePath ?? '')
-    //         await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath))
-    //     } else if (!fileExists && tempFileExists) {
-    //         const fileContent = await fs.readFileText(tempFilePath ?? '')
-    //         await fs.writeFile(filePath, fileContent)
-    //         await fs.delete(tempFilePath ?? '')
-    //         await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath))
-    //     }
-    //     // TODO: Call the processToolUseMessage
-    //     // Reset the filePaths to undefined
-    //     session.setFilePath(undefined)
-    //     session.setTempFilePath(undefined)
-    //     session.setShowDiffOnFileWrite(false)
-    // }
-
     private async processCopyCodeToClipboard(message: CopyCodeToClipboard) {
         this.telemetryHelper.recordInteractWithMessage(message)
     }
@@ -648,7 +621,6 @@ export class ChatController {
             telemetry.ui_click.emit({ elementId: 'amazonq_createSavedPrompt' })
         } else if (message.action.id === 'accept-code-diff') {
             await this.processToolUseMessage(message)
-            // await this.processAcceptCodeDiff(message)
         } else if (message.action.id === 'reject-code-diff') {
             // Reset the filePaths to undefined
             this.sessionStorage.getSession(message.tabID ?? '').setFilePath(undefined)
@@ -694,9 +666,7 @@ export class ChatController {
             await ToolUtils.validate(tool)
 
             const chatStream = new ChatStream(this.messenger, message.tabID, randomUUID(), clonedToolUse?.toolUseId)
-            const output = await ToolUtils.invoke(tool, chatStream)
-            // eslint-disable-next-line @typescript-eslint/no-base-to-string
-            getLogger().info(`${output}`)
+            await ToolUtils.invoke(tool, chatStream)
 
             // Check if fileExists=false, If yes, return instead of showing broken diff experience.
             if (!session.tempFilePath) {

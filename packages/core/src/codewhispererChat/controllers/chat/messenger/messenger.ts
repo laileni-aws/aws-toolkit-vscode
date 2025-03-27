@@ -225,8 +225,6 @@ export class Messenger {
                         const message = this.getToolUseMessage(toolUse, session)
                         const isConfirmationRequired = this.getIsConfirmationRequired(toolUse)
 
-                        // TODO: If toolUse is fsWrite then session.setShowDiffOnFileWrite(true)
-
                         // Buttons
                         const buttons: ChatItemButton[] = []
                         if (isConfirmationRequired && toolUse.name === 'fsWrite') {
@@ -257,7 +255,7 @@ export class Messenger {
                         } else if (isConfirmationRequired) {
                             buttons.push({ id: 'confirm-tool-use', text: 'Confirm', position: 'outside' })
                         }
-                        // Call tool > queueDescription
+
                         this.dispatcher.sendChatMessage(
                             new ChatMessage(
                                 {
@@ -287,7 +285,7 @@ export class Messenger {
                                 tabID
                             )
                         )
-                        // TODO: setup permission action
+
                         if (!isConfirmationRequired) {
                             this.dispatcher.sendCustomFormActionMessage(
                                 new CustomFormActionMessage(tabID, {
@@ -678,13 +676,6 @@ export class Messenger {
     private getToolUseMessage(toolUse: ToolUse, session: ChatSession) {
         if (toolUse.name === 'fsRead') {
             session.addToReadFiles((toolUse.input as any)?.path)
-            // TODO: Show better UX according to figma and store all the previous read files in session and show as complete.
-            // const formattedFiles = session.readFiles
-            //     .map((filePath) => {
-            //         return `• ${filePath}`
-            //     })
-            //     .join('\n')
-            // return `Reading the following files ... \n${formattedFiles}\n`
             return `${session.readFiles.length} files read, reading file ${(toolUse.input as any)?.path}`
         }
         if (toolUse.name === 'executeBash') {
@@ -697,46 +688,6 @@ export class Messenger {
         }
         if (toolUse.name === 'fsWrite') {
             return `Please see the generated code below. Click on the file to review the changes in the code editor and select Accept or Reject.`
-            /*
-            const input = toolUse.input as unknown as FsWriteParams
-            switch (input.command) {
-                case 'create': {
-                    return `Writing
-        \`\`\`
-        ${input.fileText}
-        \`\`\`
-        into the file at \`${input.path}\` using the \`fsWrite\` tool.`
-                }
-                case 'strReplace': {
-                    return `Replacing
-        \`\`\`
-        ${input.oldStr}
-        \`\`\`
-        with
-        \`\`\`
-        ${input.newStr}
-        \`\`\`
-        at \`${input.path}\` using the \`fsWrite\` tool.`
-                }
-                case 'insert': {
-                    return `Inserting
-        \`\`\`
-        ${input.newStr}
-        \`\`\`
-        at line
-        \`\`\`
-        ${input.insertLine}
-        \`\`\`
-        at \`${input.path}\` using the \`fsWrite\` tool.`
-                }
-                case 'append': {
-                    return `Appending
-        \`\`\`
-        ${input.newStr}
-        \`\`\`
-        at \`${input.path}\` using the \`fsWrite\` tool.`
-                }
-            }*/
         }
     }
 }
