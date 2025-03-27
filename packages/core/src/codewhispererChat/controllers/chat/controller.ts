@@ -49,6 +49,7 @@ import {
     CodeWhispererStreamingServiceException,
     Origin,
     ToolResult,
+    ToolUse,
     ToolResultStatus,
 } from '@amzn/codewhisperer-streaming'
 import { UserIntentRecognizer } from './userIntent/userIntentRecognizer'
@@ -399,30 +400,32 @@ export class ChatController {
             })
     }
 
-    private async processAcceptCodeDiff(message: CustomFormActionMessage) {
-        const session = this.sessionStorage.getSession(message.tabID ?? '')
-        const filePath = session.filePath ?? ''
-        const fileExists = await fs.existsFile(filePath)
-        const tempFilePath = session.tempFilePath
-        const tempFileExists = await fs.existsFile(tempFilePath ?? '')
-        if (fileExists && tempFileExists) {
-            const fileContent = await fs.readFileText(filePath)
-            const tempFileContent = await fs.readFileText(tempFilePath ?? '')
-            if (fileContent !== tempFileContent) {
-                await fs.writeFile(filePath, tempFileContent)
-            }
-            await fs.delete(tempFilePath ?? '')
-            await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath))
-        } else if (!fileExists && tempFileExists) {
-            const fileContent = await fs.readFileText(tempFilePath ?? '')
-            await fs.writeFile(filePath, fileContent)
-            await fs.delete(tempFilePath ?? '')
-            await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath))
-        }
-        // Reset the filePaths to undefined
-        session.setFilePath(undefined)
-        session.setTempFilePath(undefined)
-    }
+    // private async processAcceptCodeDiff(message: CustomFormActionMessage) {
+    //     const session = this.sessionStorage.getSession(message.tabID ?? '')
+    //     const filePath = session.filePath ?? ''
+    //     const fileExists = await fs.existsFile(filePath)
+    //     const tempFilePath = session.tempFilePath
+    //     const tempFileExists = await fs.existsFile(tempFilePath ?? '')
+    //     if (fileExists && tempFileExists) {
+    //         const fileContent = await fs.readFileText(filePath)
+    //         const tempFileContent = await fs.readFileText(tempFilePath ?? '')
+    //         if (fileContent !== tempFileContent) {
+    //             await fs.writeFile(filePath, tempFileContent)
+    //         }
+    //         await fs.delete(tempFilePath ?? '')
+    //         await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath))
+    //     } else if (!fileExists && tempFileExists) {
+    //         const fileContent = await fs.readFileText(tempFilePath ?? '')
+    //         await fs.writeFile(filePath, fileContent)
+    //         await fs.delete(tempFilePath ?? '')
+    //         await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath))
+    //     }
+    //     // TODO: Call the processToolUseMessage
+    //     // Reset the filePaths to undefined
+    //     session.setFilePath(undefined)
+    //     session.setTempFilePath(undefined)
+    //     session.setShowDiffOnFileWrite(false)
+    // }
 
     private async processCopyCodeToClipboard(message: CopyCodeToClipboard) {
         this.telemetryHelper.recordInteractWithMessage(message)
@@ -644,7 +647,8 @@ export class ChatController {
             await vscode.window.showTextDocument(newFileDoc)
             telemetry.ui_click.emit({ elementId: 'amazonq_createSavedPrompt' })
         } else if (message.action.id === 'accept-code-diff') {
-            await this.processAcceptCodeDiff(message)
+            await this.processToolUseMessage(message)
+            // await this.processAcceptCodeDiff(message)
         } else if (message.action.id === 'reject-code-diff') {
             // Reset the filePaths to undefined
             this.sessionStorage.getSession(message.tabID ?? '').setFilePath(undefined)
@@ -663,6 +667,11 @@ export class ChatController {
         const session = this.sessionStorage.getSession(message.tabID)
         // Check if user clicked on filePath in the contextList or in the fileListTree and perform the functionality accordingly.
         if (session.showDiffOnFileWrite) {
+            const input = session.toolUse?.input as unknown as FsWriteCommand
+            input.path = session.tempFilePath ?? ''
+            await FsWrite.validate(input)
+            await FsWrite.invoke(input)
+
             const filePath = session.filePath ?? message.filePath
             const fileExists = await fs.existsFile(filePath)
             // Check if fileExists=false, If yes, return instead of showing broken diff experience.
@@ -947,9 +956,7 @@ export class ChatController {
                     return
                 }
                 session.setToolUse(undefined)
-
                 const toolResults: ToolResult[] = []
-
                 const result = ToolUtils.tryFromToolUse(toolUse)
                 if ('type' in result) {
                     const tool: Tool = result
@@ -981,6 +988,10 @@ export class ChatController {
                     toolResults.push(toolResult)
                 }
 
+                if (toolUse?.name === 'fsWrite' && this.sessionStorage.getSession(tabID).filePath) {
+                    const filePath = this.sessionStorage.getSession(tabID).filePath ?? ''
+                    await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath))
+                }
                 await this.generateResponse(
                     {
                         message: '',
@@ -1012,6 +1023,90 @@ export class ChatController {
             .catch((e) => {
                 this.processException(e, tabID)
             })
+    }
+
+    public async executeToolAndGetResults(tabID: string, triggerID: string): Promise<ToolResult[]> {
+        const session = this.sessionStorage.getSession(tabID)
+        const toolUse = session.toolUse
+        if (!toolUse || !toolUse.input) {
+            return []
+        }
+        session.setToolUse(undefined)
+
+        let result: InvokeOutput | undefined = undefined
+        const toolResults: ToolResult[] = []
+        try {
+            switch (toolUse.name) {
+                case 'executeBash': {
+                    const executeBash = new ExecuteBash(toolUse.input as unknown as ExecuteBashParams)
+                    await executeBash.validate()
+                    const chatStream = new ChatStream(this.messenger, tabID, triggerID, toolUse.toolUseId)
+                    result = await executeBash.invoke(chatStream)
+                    break
+                }
+                case 'fsRead': {
+                    const fsRead = new FsRead(toolUse.input as unknown as FsReadParams)
+                    await fsRead.validate()
+                    result = await fsRead.invoke()
+                    break
+                }
+                case 'fsWrite': {
+                    const input = toolUse.input as unknown as FsWriteCommand
+                    await FsWrite.validate(input)
+                    result = await FsWrite.invoke(input)
+                    break
+                }
+                default:
+                    throw new ToolkitError(`Unsupported tool: ${toolUse.name}`)
+            }
+            if (!result) {
+                throw new ToolkitError('Failed to execute tool and get results')
+            }
+
+            toolResults.push({
+                content: [
+                    result.output.kind === OutputKind.Text
+                        ? { text: result.output.content }
+                        : { json: result.output.content },
+                ],
+                toolUseId: toolUse.toolUseId,
+                status: 'success',
+            })
+        } catch (e: any) {
+            const errorMessage = e instanceof Error ? e.message : 'Unknown error occurred during tool execution'
+            getLogger().debug(`Tool execution failed: ${toolUse.name} - ${errorMessage}`)
+
+            toolResults.push({
+                content: [{ text: errorMessage }],
+                toolUseId: toolUse.toolUseId,
+                status: 'error',
+            })
+        }
+
+        return toolResults
+    }
+
+    private async executeToolByName(toolUse: ToolUse, tabID: string, triggerID: string): Promise<InvokeOutput> {
+        switch (toolUse.name) {
+            case 'executeBash': {
+                const executeBash = new ExecuteBash(toolUse.input as unknown as ExecuteBashParams)
+                await executeBash.validate()
+                const chatStream = new ChatStream(this.messenger, tabID, triggerID, toolUse.toolUseId)
+                return await executeBash.invoke(chatStream)
+            }
+            case 'fsRead': {
+                const fsRead = new FsRead(toolUse.input as unknown as FsReadParams)
+                await fsRead.validate()
+                return await fsRead.invoke()
+            }
+            case 'fsWrite': {
+                const input = toolUse.input as unknown as FsWriteCommand
+                await FsWrite.validate(input)
+                return await FsWrite.invoke(input)
+            }
+            default:
+                throw new ToolkitError(`Unsupported tool: ${toolUse.name}`)
+        }
     }
 
     private async processPromptMessageAsNewThread(message: PromptMessage) {

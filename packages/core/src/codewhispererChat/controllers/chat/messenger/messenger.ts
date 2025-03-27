@@ -41,8 +41,13 @@ import { extractAuthFollowUp } from '../../../../amazonq/util/authUtils'
 import { helpMessage } from '../../../../amazonq/webview/ui/texts/constants'
 import { ChatItemButton, ChatItemFormItem, MynahUIDataModel } from '@aws/mynah-ui'
 import { ChatHistoryManager } from '../../../storages/chatHistory'
-import { ExecuteBashParams } from '../../../tools/executeBash'
+import { ExecuteBash, ExecuteBashParams } from '../../../tools/executeBash'
 import { FsWriteParams } from '../../../tools/fsWrite'
+import path from 'path'
+import { workspace } from 'vscode'
+import { getWorkspaceForFile } from '../../../../shared/utilities/workspaceUtils'
+import { tempDirPath } from '../../../../shared/filesystemUtilities'
+import { fs } from '../../../../shared/fs/fs'
 
 export type StaticTextResponseType = 'quick-action-help' | 'onboarding-help' | 'transform' | 'help'
 
@@ -212,12 +217,48 @@ export class Messenger {
                         toolUse.toolUseId = cwChatEvent.toolUseEvent.toolUseId ?? ''
                         toolUse.name = cwChatEvent.toolUseEvent.name ?? ''
                         session.setToolUse(toolUse)
+                        const absolutePath = (toolUse.input as any).path
+                        session.setFilePath(absolutePath)
+                        const workspaceRoot = workspace.workspaceFolders?.[0]?.uri.fsPath
+                        const relativePath = workspaceRoot ? path.relative(workspaceRoot, absolutePath) : absolutePath
+                        const projectPath = getWorkspaceForFile(absolutePath) ?? ''
 
-                        const message = this.getToolUseMessage(toolUse)
-                        // const isConfirmationRequired = this.getIsConfirmationRequired(toolUse)
+                        const message = this.getToolUseMessage(toolUse, session)
+                        const isConfirmationRequired = this.getIsConfirmationRequired(toolUse)
 
-                        // TODO: If toolUse is fs_write then session.setShowDiffOnFileWrite(true)
+                        // TODO: If toolUse is fsWrite then session.setShowDiffOnFileWrite(true)
 
+                        // Buttons
+                        const buttons: ChatItemButton[] = []
+                        if (isConfirmationRequired && toolUse.name === 'fsWrite') {
+                            session.setShowDiffOnFileWrite(true)
+                            // create a temp folder
+                            const pathToArchiveDir = path.join(tempDirPath, 'q-chat')
+                            const archivePathExists = await fs.existsDir(pathToArchiveDir)
+                            if (archivePathExists) {
+                                await fs.delete(pathToArchiveDir, { recursive: true })
+                            }
+                            await fs.mkdir(pathToArchiveDir)
+                            const resultArtifactsDir = path.join(pathToArchiveDir, 'resultArtifacts')
+                            await fs.mkdir(resultArtifactsDir)
+                            const tempFilePath = path.join(resultArtifactsDir, `temp-${path.basename(absolutePath)}`)
+                            session.setTempFilePath(tempFilePath)
+                            buttons.push({
+                                id: 'reject-code-diff',
+                                text: 'Reject',
+                                position: 'outside',
+                                status: 'error',
+                            })
+                            buttons.push({
+                                id: 'accept-code-diff',
+                                text: 'Accept',
+                                position: 'outside',
+                                status: 'success',
+                            })
+                        } else if (isConfirmationRequired) {
+                            buttons.push({ id: 'confirm-tool-use', text: 'Confirm', position: 'outside' })
+                        }
+                        // Call tool > queueDescription
                         this.dispatcher.sendChatMessage(
                             new ChatMessage(
                                 {
@@ -232,20 +273,29 @@ export class Messenger {
                                     userIntent: triggerPayload.userIntent,
                                     codeBlockLanguage: codeBlockLanguage,
                                     contextList: undefined,
-                                    // TODO: confirmation buttons
+                                    title: undefined,
+                                    buttons,
+                                    fileList:
+                                        isConfirmationRequired && toolUse.name === 'fsWrite'
+                                            ? {
+                                                  fileTreeTitle: 'Code suggestions',
+                                                  rootFolderTitle: path.basename(projectPath),
+                                                  filePaths: [relativePath],
+                                              }
+                                            : undefined,
+                                    canBeVoted: isConfirmationRequired,
                                 },
                                 tabID
                             )
                         )
-
-                        this.dispatcher.sendCustomFormActionMessage(
-                            new CustomFormActionMessage(tabID, {
-                                id: 'confirm-tool-use',
-                            })
-                        )
                         // TODO: setup permission action
-                        // if (!isConfirmationRequired) {
-                        // }
+                        if (!isConfirmationRequired) {
+                            this.dispatcher.sendCustomFormActionMessage(
+                                new CustomFormActionMessage(tabID, {
+                                    id: 'confirm-tool-use',
+                                })
+                            )
+                        }
                     }
 
                     if (
@@ -619,16 +669,24 @@ export class Messenger {
     }
 
     // TODO: Make this cleaner
-    // private getIsConfirmationRequired(toolUse: ToolUse) {
-    //     if (toolUse.name === 'execute_bash') {
-    //         const executeBash = new ExecuteBash(toolUse.input as unknown as ExecuteBashParams)
-    //         return executeBash.requiresAcceptance()
-    //     }
-    //     return toolUse.name === 'fs_write'
-    // }
-    private getToolUseMessage(toolUse: ToolUse) {
+    private getIsConfirmationRequired(toolUse: ToolUse) {
+        if (toolUse.name === 'executeBash') {
+            const executeBash = new ExecuteBash(toolUse.input as unknown as ExecuteBashParams)
+            return executeBash.requiresAcceptance()
+        }
+        return toolUse.name === 'fsWrite'
+    }
+    private getToolUseMessage(toolUse: ToolUse, session: ChatSession) {
         if (toolUse.name === 'fsRead') {
-            return `Reading the file at \`${(toolUse.input as any)?.path}\` using the \`fsRead\` tool.`
+            session.addToReadFiles((toolUse.input as any)?.path)
+            // TODO: Show better UX according to figma and store all the previous read files in session and show as complete.
+            // const formattedFiles = session.readFiles
+            //     .map((filePath) => {
+            //         return `• ${filePath}`
+            //     })
+            //     .join('\n')
+            // return `Reading the following files ... \n${formattedFiles}\n`
+            return `${session.readFiles.length} files read, reading file ${(toolUse.input as any)?.path}`
         }
         if (toolUse.name === 'executeBash') {
             const input = toolUse.input as unknown as ExecuteBashParams
@@ -639,6 +697,8 @@ export class Messenger {
         using the \`executeBash\` tool.`
         }
         if (toolUse.name === 'fsWrite') {
+            return `Please see the generated code below. Click on the file to review the changes in the code editor and select Accept or Reject.`
+            /*
             const input = toolUse.input as unknown as FsWriteParams
             switch (input.command) {
                 case 'create': {
@@ -677,7 +737,7 @@ export class Messenger {
         \`\`\`
         at \`${input.path}\` using the \`fsWrite\` tool.`
                 }
-            }
+            }*/
         }
     }
 }
