@@ -93,6 +93,7 @@ import { amazonQTabSuffix } from '../../../shared/constants'
 import { OutputKind } from '../../tools/toolShared'
 import { ToolUtils, Tool } from '../../tools/toolUtils'
 import { ChatStream } from '../../tools/chatStream'
+import { FsWriteParams } from '../../tools/fsWrite'
 
 export interface ChatControllerMessagePublishers {
     readonly processPromptChatMessage: MessagePublisher<PromptMessage>
@@ -667,11 +668,24 @@ export class ChatController {
         const session = this.sessionStorage.getSession(message.tabID)
         // Check if user clicked on filePath in the contextList or in the fileListTree and perform the functionality accordingly.
         if (session.showDiffOnFileWrite) {
-            const input = session.toolUse?.input as unknown as FsWriteCommand
+            const input = session.toolUse?.input as unknown as FsWriteParams
             input.path = session.tempFilePath ?? ''
-            await FsWrite.validate(input)
-            await FsWrite.invoke(input)
+            // await FsWrite.validate(input)
+            // await FsWrite.invoke(input)
+            if (!session.toolUse) {
+                return
+            }
+            const result = ToolUtils.tryFromToolUse(session.toolUse)
+            if (!('type' in result)) {
+                return
+            }
+            const tool: Tool = result
+            await ToolUtils.validate(tool)
 
+            const chatStream = new ChatStream(this.messenger, message.tabID, randomUUID(), session.toolUse?.toolUseId)
+            const output = await ToolUtils.invoke(tool, chatStream)
+            // eslint-disable-next-line @typescript-eslint/no-base-to-string
+            getLogger().info(`${output}`)
             const filePath = session.filePath ?? message.filePath
             const fileExists = await fs.existsFile(filePath)
             // Check if fileExists=false, If yes, return instead of showing broken diff experience.
@@ -1023,90 +1037,6 @@ export class ChatController {
             .catch((e) => {
                 this.processException(e, tabID)
             })
-    }
-
-    public async executeToolAndGetResults(tabID: string, triggerID: string): Promise<ToolResult[]> {
-        const session = this.sessionStorage.getSession(tabID)
-        const toolUse = session.toolUse
-        if (!toolUse || !toolUse.input) {
-            return []
-        }
-        session.setToolUse(undefined)
-
-        let result: InvokeOutput | undefined = undefined
-        const toolResults: ToolResult[] = []
-        try {
-            switch (toolUse.name) {
-                case 'executeBash': {
-                    const executeBash = new ExecuteBash(toolUse.input as unknown as ExecuteBashParams)
-                    await executeBash.validate()
-                    const chatStream = new ChatStream(this.messenger, tabID, triggerID, toolUse.toolUseId)
-                    result = await executeBash.invoke(chatStream)
-                    break
-                }
-                case 'fsRead': {
-                    const fsRead = new FsRead(toolUse.input as unknown as FsReadParams)
-                    await fsRead.validate()
-                    result = await fsRead.invoke()
-                    break
-                }
-                case 'fsWrite': {
-                    const input = toolUse.input as unknown as FsWriteCommand
-                    await FsWrite.validate(input)
-                    result = await FsWrite.invoke(input)
-                    break
-                }
-                default:
-                    throw new ToolkitError(`Unsupported tool: ${toolUse.name}`)
-            }
-            if (!result) {
-                throw new ToolkitError('Failed to execute tool and get results')
-            }
-
-            toolResults.push({
-                content: [
-                    result.output.kind === OutputKind.Text
-                        ? { text: result.output.content }
-                        : { json: result.output.content },
-                ],
-                toolUseId: toolUse.toolUseId,
-                status: 'success',
-            })
-        } catch (e: any) {
-            const errorMessage = e instanceof Error ? e.message : 'Unknown error occurred during tool execution'
-            getLogger().debug(`Tool execution failed: ${toolUse.name} - ${errorMessage}`)
-
-            toolResults.push({
-                content: [{ text: errorMessage }],
-                toolUseId: toolUse.toolUseId,
-                status: 'error',
-            })
-        }
-
-        return toolResults
-    }
-
-    private async executeToolByName(toolUse: ToolUse, tabID: string, triggerID: string): Promise<InvokeOutput> {
-        switch (toolUse.name) {
-            case 'executeBash': {
-                const executeBash = new ExecuteBash(toolUse.input as unknown as ExecuteBashParams)
-                await executeBash.validate()
-                const chatStream = new ChatStream(this.messenger, tabID, triggerID, toolUse.toolUseId)
-                return await executeBash.invoke(chatStream)
-            }
-            case 'fsRead': {
-                const fsRead = new FsRead(toolUse.input as unknown as FsReadParams)
-                await fsRead.validate()
-                return await fsRead.invoke()
-            }
-            case 'fsWrite': {
-                const input = toolUse.input as unknown as FsWriteCommand
-                await FsWrite.validate(input)
-                return await FsWrite.invoke(input)
-            }
-            default:
-                throw new ToolkitError(`Unsupported tool: ${toolUse.name}`)
-        }
     }
 
     private async processPromptMessageAsNewThread(message: PromptMessage) {

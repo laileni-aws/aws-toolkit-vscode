@@ -51,7 +51,7 @@ export class FsRead {
 
     public queueDescription(updates: Writable): void {}
 
-    public async invoke(updates: Writable): Promise<InvokeOutput> {
+    public async invoke(updates?: Writable): Promise<InvokeOutput> {
         try {
             const fileUri = vscode.Uri.file(this.fsPath)
 

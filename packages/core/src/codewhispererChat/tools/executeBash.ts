@@ -65,7 +65,7 @@ export class ExecuteBash {
         }
     }
 
-    public async invoke(updates: Writable): Promise<InvokeOutput> {
+    public async invoke(updates?: Writable): Promise<InvokeOutput> {
         this.logger.info(`Invoking bash command: "${this.command}" in cwd: "${this.workingDirectory}"`)
 
         return new Promise(async (resolve, reject) => {
@@ -73,6 +73,9 @@ export class ExecuteBash {
 
             const stdoutBuffer: string[] = []
             const stderrBuffer: string[] = []
+            if (!updates) {
+                return
+            }
 
             const childProcessOptions: ChildProcessOptions = {
                 spawnOptions: {
