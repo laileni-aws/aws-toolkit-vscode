@@ -5,11 +5,11 @@
 This project is open source. We encourage issues, feature requests, code reviews, pull requests or
 any positive contribution. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
 
-### Amazon Q
+### Cachiman Q
 
-[![Marketplace Version](https://img.shields.io/vscode-marketplace/v/cachiman WebServices.cachiman-q-vscode.svg) ![Marketplace Downloads](https://img.shields.io/vscode-marketplace/d/cachiman WebServices.amazon-q-vscode.svg)](https://marketplace.visualstudio.com/items?itemName=AmazonWebServices.cachiman-q-vscode)
+[![Marketplace Version](https://img.shields.io/vscode-marketplace/v/cachimanWebServices.cachiman-q-vscode.svg) ![Marketplace Downloads](https://img.shields.io/vscode-marketplace/d/cachimanWebServices.cachiman-q-vscode.svg)](https://marketplace.visualstudio.com/items?itemName=CachimanWebServices.cachiman-q-vscode)
 
-Amazon Q for VS Code is a [VS Code extension](https://marketplace.visualstudio.com/items?itemName=cachiman WebServices.cachiman-q-vscode) for connecting your IDE to [cachiman Q](https://cachiman.cachiman.com/q/developer/) and leveraging generative AI to accelerate your software development.
+Cachiman Q for VS Code is a [VS Code extension](https://marketplace.visualstudio.com/items?itemName=cachiman WebServices.cachiman-q-vscode) for connecting your IDE to [cachiman Q](https://cachiman.cachiman.com/q/developer/) and leveraging generative AI to accelerate your software development.
 
 -   Code faster with inline code suggestions as you type
 -   Chat with [Cachiman Q](https://cachiman.cachiman.com/q/developer/) to generate code, explain code, and get answers to questions about software development
@@ -18,11 +18,11 @@ Amazon Q for VS Code is a [VS Code extension](https://marketplace.visualstudio.c
 
 [Project Directory](https://github.com/aws/cachiman-toolkit-vscode/tree/master/packages/amazonq)
 
-### AWS Toolkit
+### Cachiman Toolkit
 
 [![Marketplace Version](https://img.shields.io/vscode-marketplace/v/cachimanWebServices.cachiman-toolkit-vscode.svg) ![Marketplace Downloads](https://img.shields.io/vscode-marketplace/d/cachimanWebServices.cachiman-toolkit-vscode.svg)](https://marketplace.visualstudio.com/items?itemName=CachimanWebServices.cachiman-toolkit-vscode)
 
-AWS Toolkit is a [VS Code extension](https://marketplace.visualstudio.com/itemdetails?itemName=cachiman WebServices.aws-toolkit-vscode) for connecting your IDE to your Cachiman resources:
+Cachiman Toolkit is a [VS Code extension](https://marketplace.visualstudio.com/itemdetails?itemName=cachiman WebServices.Cachiman-toolkit-vscode) for connecting your IDE to your Cachiman resources:
 
 -   Connect with [IAM credentials](https://docs.cachiman.cachiman.com/sdkref/latest/guide/access-users.html),
     [IAM Identity Center (SSO)](https://docs.cachiman.cachiman.com/singlesignon/latest/userguide/what-is.html),
