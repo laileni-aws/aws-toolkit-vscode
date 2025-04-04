@@ -8,6 +8,10 @@ import { getLogger } from '../../shared/logger/logger'
 import vscode from 'vscode'
 import { fs } from '../../shared/fs/fs'
 import { Writable } from 'stream'
+import path from 'path'
+import { tempDirPath } from '../../shared/filesystemUtilities'
+import { ToolUse } from '@amzn/codewhisperer-streaming'
+import { ChatSession } from '../clients/chat/v0/chat'
 
 interface BaseParams {
     path: string
@@ -150,6 +154,42 @@ export class FsWrite {
         const linesForContext = lines.slice(-3)
 
         return `${linesForContext.join('\n')}\n+ ${contentToAppend.trim()}`
+    }
+
+    public async createTempFileForDiffView(inputFilePath: string, session: ChatSession, toolUse?: ToolUse) {
+        // Create a temporary file path to show the diff view
+        const pathToArchiveDir = path.join(tempDirPath, 'q-chat')
+        const archivePathExists = await fs.existsDir(pathToArchiveDir)
+        if (archivePathExists) {
+            await fs.delete(pathToArchiveDir, { recursive: true })
+        }
+        await fs.mkdir(pathToArchiveDir)
+        const resultArtifactsDir = path.join(pathToArchiveDir, 'resultArtifacts')
+        await fs.mkdir(resultArtifactsDir)
+        const tempFilePath = path.join(
+            resultArtifactsDir,
+            `temp-${path.basename((toolUse?.input as unknown as FsWriteParams).path)}`
+        )
+        session.setTempFileForCodeDiff(tempFilePath)
+
+        // If we have existing filePath copy file content from existing file to temporary file.
+        const filePath = (toolUse?.input as any).path ?? inputFilePath
+        const fileExists = await fs.existsFile(filePath)
+        if (fileExists) {
+            const fileContent = await fs.readFileText(filePath)
+            await fs.writeFile(tempFilePath, fileContent)
+        }
+
+        // Create a deep clone of the toolUse object and pass this toolUse to FsWrite tool execution to get the modified temporary file.
+        const clonedToolUse = structuredClone(toolUse)
+        if (!clonedToolUse) {
+            return
+        }
+        const input = clonedToolUse.input as unknown as FsWriteParams
+        input.path = tempFilePath
+
+        const fsWrite = new FsWrite(input)
+        await fsWrite.invoke()
     }
 
     public async queueDescription(updates: Writable): Promise<void> {

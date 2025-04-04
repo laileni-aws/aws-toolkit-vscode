@@ -29,17 +29,27 @@ export class ChatSession {
     private _showDiffOnFileWrite: boolean = false
     private _context: PromptMessage['context']
     private _messageIdToUpdate: string | undefined
+    private _tempFileForCodeDiff: string | undefined
 
     contexts: Map<string, { first: number; second: number }[]> = new Map()
     // TODO: doesn't handle the edge case when two files share the same relativePath string but from different root
     // e.g. root_a/file1 vs root_b/file1
     relativePathToWorkspaceRoot: Map<string, string> = new Map()
+
     public get sessionIdentifier(): string | undefined {
         return this.sessionId
     }
 
     public get toolUse(): ToolUse | undefined {
         return this._toolUse
+    }
+
+    public get tempFileForCodeDiff(): string | undefined {
+        return this._tempFileForCodeDiff
+    }
+
+    public setTempFileForCodeDiff(tempFileForCodeDiff: string | undefined) {
+        this._tempFileForCodeDiff = tempFileForCodeDiff
     }
 
     public setToolUse(toolUse: ToolUse | undefined) {
