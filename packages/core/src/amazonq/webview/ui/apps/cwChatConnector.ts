@@ -314,7 +314,7 @@ export class Connector extends BaseConnector {
 
         if (
             !this.onChatAnswerUpdated ||
-            !['accept-code-diff', 'reject-code-diff', 'confirm-tool-use'].includes(action.id)
+            !(['accept-code-diff', 'confirm-tool-use'].includes(action.id) || action.id.startsWith('reject-code-diff'))
         ) {
             return
         }
@@ -341,17 +341,6 @@ export class Connector extends BaseConnector {
                     answer.body = ' '
                 }
                 break
-            case 'reject-code-diff':
-                if (answer.header) {
-                    answer.header.status = {
-                        icon: 'cancel' as MynahIconsType,
-                        text: 'Rejected',
-                        status: 'error',
-                    }
-                    answer.header.buttons = []
-                    answer.body = ' '
-                }
-                break
             case 'confirm-tool-use':
                 answer.buttons = [
                     {
@@ -366,6 +355,17 @@ export class Connector extends BaseConnector {
                 break
             default:
                 break
+        }
+        if (action.id.startsWith('reject-code-diff')) {
+            if (answer.header) {
+                answer.header.status = {
+                    icon: 'cancel' as MynahIconsType,
+                    text: 'Rejected',
+                    status: 'error',
+                }
+                answer.header.buttons = []
+                answer.body = ' '
+            }
         }
 
         if (currentChatItem && answer.messageId) {

@@ -28,6 +28,7 @@ export class ChatSession {
     private _showDiffOnFileWrite: boolean = false
     private _context: PromptMessage['context']
     private _pairProgrammingModeOn: boolean = true
+    private _fsWriteBackups: Map<string, { filePath: string; content: string; isNew: boolean }> = new Map()
 
     contexts: Map<string, { first: number; second: number }[]> = new Map()
     // TODO: doesn't handle the edge case when two files share the same relativePath string but from different root
@@ -51,6 +52,20 @@ export class ChatSession {
 
     public setToolUse(toolUse: ToolUse | undefined) {
         this._toolUse = toolUse
+    }
+
+    public get fsWriteBackups() {
+        return this._fsWriteBackups
+    }
+
+    public setFsWriteBackups(
+        toolUseId: string | undefined,
+        content: { filePath: string; content: string; isNew: boolean }
+    ) {
+        if (!toolUseId) {
+            return
+        }
+        this._fsWriteBackups.set(toolUseId, content)
     }
 
     public get context(): PromptMessage['context'] {

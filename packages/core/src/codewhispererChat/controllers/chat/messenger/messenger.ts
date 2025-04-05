@@ -489,7 +489,7 @@ export class Messenger {
             }
             // Buttons
             buttons.push({
-                id: 'reject-code-diff',
+                id: `reject-code-diff/${toolUse.toolUseId}`,
                 status: 'clear',
                 icon: 'cancel' as MynahIconsType,
             })
