@@ -242,14 +242,11 @@ export class Messenger {
                             const chatStream = new ChatStream(this, tabID, triggerID, toolUse, validation, changeList)
                             await ToolUtils.queueDescription(tool, chatStream)
 
-                            if (!validation.requiresAcceptance) {
-                                // Need separate id for read tool and safe bash command execution as 'confirm-tool-use' id is required to change button status from `Confirm` to `Confirmed` state in cwChatConnector.ts which will impact generic tool execution.
-                                this.dispatcher.sendCustomFormActionMessage(
-                                    new CustomFormActionMessage(tabID, {
-                                        id: 'generic-tool-execution',
-                                    })
-                                )
-                            }
+                            this.dispatcher.sendCustomFormActionMessage(
+                                new CustomFormActionMessage(tabID, {
+                                    id: 'generic-tool-execution',
+                                })
+                            )
                         } else {
                             // TODO: Handle the error
                         }
