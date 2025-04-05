@@ -819,9 +819,10 @@ export class ChatController {
                 await this.handleCreatePrompt(message)
                 break
             case 'accept-code-diff':
+                await this.closeDiffView()
+                break
             case 'confirm-tool-use':
             case 'generic-tool-execution':
-                await this.closeDiffView()
                 await this.processToolUseMessage(message)
                 break
             case 'reject-code-diff':
