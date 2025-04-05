@@ -83,29 +83,37 @@ export class FsWrite {
     }
 
     public async getDiffChanges(): Promise<Change[]> {
-        const sanitizedPath = sanitizePath(this.params.path)
+        const { filePath, content: oldContent } = await this.getOldContent()
         let newContent
-        let oldContent
-        try {
-            oldContent = await fs.readFileText(sanitizedPath)
-        } catch (err) {
-            oldContent = ''
-        }
         switch (this.params.command) {
             case 'create':
                 newContent = this.getCreateCommandText(this.params)
                 break
             case 'strReplace':
-                newContent = await this.getStrReplaceContent(this.params, sanitizedPath)
+                newContent = await this.getStrReplaceContent(this.params, filePath)
                 break
             case 'insert':
-                newContent = await this.getInsertContent(this.params, sanitizedPath)
+                newContent = await this.getInsertContent(this.params, filePath)
                 break
             case 'append':
-                newContent = await this.getAppendContent(this.params, sanitizedPath)
+                newContent = await this.getAppendContent(this.params, filePath)
                 break
         }
         return diffLines(oldContent, newContent)
+    }
+
+    public async getOldContent(): Promise<{ filePath: string; content: string; isNew: boolean }> {
+        const sanitizedPath = sanitizePath(this.params.path)
+        let oldContent
+        let isNew
+        try {
+            oldContent = await fs.readFileText(sanitizedPath)
+            isNew = false
+        } catch (err) {
+            oldContent = ''
+            isNew = true
+        }
+        return { filePath: sanitizedPath, content: oldContent, isNew }
     }
 
     public async validate(): Promise<void> {

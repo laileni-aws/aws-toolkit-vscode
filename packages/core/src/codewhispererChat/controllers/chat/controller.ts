@@ -92,7 +92,7 @@ import { maxToolOutputCharacterLength, OutputKind } from '../../tools/toolShared
 import { ToolUtils, Tool, ToolType } from '../../tools/toolUtils'
 import { ChatStream } from '../../tools/chatStream'
 import { ChatHistoryStorage } from '../../storages/chatHistoryStorage'
-import { FsWrite, FsWriteParams } from '../../tools/fsWrite'
+import { FsWriteParams } from '../../tools/fsWrite'
 import { tempDirPath } from '../../../shared/filesystemUtilities'
 
 export interface ChatControllerMessagePublishers {
@@ -739,6 +739,10 @@ export class ChatController {
                         const chatStream = new ChatStream(this.messenger, tabID, triggerID, toolUse, {
                             requiresAcceptance: false,
                         })
+                        if (tool.type === ToolType.FsWrite) {
+                            const backup = await tool.tool.getOldContent()
+                            session.setFsWriteBackups(toolUse.toolUseId, backup)
+                        }
                         const output = await ToolUtils.invoke(tool, chatStream)
                         if (output.output.content.length > maxToolOutputCharacterLength) {
                             throw Error(
@@ -818,21 +822,28 @@ export class ChatController {
             case 'submit-create-prompt':
                 await this.handleCreatePrompt(message)
                 break
-            case 'accept-code-diff':
-                await this.closeDiffView()
-                break
             case 'confirm-tool-use':
             case 'generic-tool-execution':
                 await this.processToolUseMessage(message)
-                break
-            case 'reject-code-diff':
-                await this.closeDiffView()
                 break
             case 'tool-unavailable':
                 await this.processUnavailableToolUseMessage(message)
                 break
             default:
                 getLogger().warn(`Unhandled action: ${message.action.id}`)
+        }
+
+        if (message.action.id.startsWith('reject-code-diff')) {
+            // revert the changes
+            const toolUseId = message.action.id.split('/')[1]
+            const backups = this.sessionStorage.getSession(message.tabID!).fsWriteBackups
+            const { filePath, content, isNew } = backups.get(toolUseId) ?? {}
+            if (filePath && isNew) {
+                await fs.delete(filePath)
+            } else if (filePath && content !== undefined) {
+                await fs.writeFile(filePath, content)
+            }
+            await this.closeDiffView()
         }
     }
 
@@ -855,8 +866,10 @@ export class ChatController {
 
     private async processFileClickMessage(message: FileClick) {
         const session = this.sessionStorage.getSession(message.tabID)
+        const toolUseId = message.messageId
+        const backup = session.fsWriteBackups.get(toolUseId)
         // Check if user clicked on filePath in the contextList or in the fileListTree and perform the functionality accordingly.
-        if (session.showDiffOnFileWrite) {
+        if (session.showDiffOnFileWrite && backup?.filePath) {
             try {
                 // Create a temporary file path to show the diff view
                 const pathToArchiveDir = path.join(tempDirPath, 'q-chat')
@@ -867,40 +880,13 @@ export class ChatController {
                 await fs.mkdir(pathToArchiveDir)
                 const resultArtifactsDir = path.join(pathToArchiveDir, 'resultArtifacts')
                 await fs.mkdir(resultArtifactsDir)
-                const tempFilePath = path.join(
-                    resultArtifactsDir,
-                    `temp-${path.basename((session.toolUse?.input as unknown as FsWriteParams).path)}`
-                )
+                const tempFilePath = path.join(resultArtifactsDir, `temp-${path.basename(backup.filePath)}`)
 
-                // If we have existing filePath copy file content from existing file to temporary file.
-                const filePath = (session.toolUse?.input as any).path ?? message.filePath
-                const fileExists = await fs.existsFile(filePath)
-                if (fileExists) {
-                    const fileContent = await fs.readFileText(filePath)
-                    await fs.writeFile(tempFilePath, fileContent)
-                }
+                await fs.writeFile(tempFilePath, backup.content)
 
-                // Create a deep clone of the toolUse object and pass this toolUse to FsWrite tool execution to get the modified temporary file.
-                const clonedToolUse = structuredClone(session.toolUse)
-                if (!clonedToolUse) {
-                    return
-                }
-                const input = clonedToolUse.input as unknown as FsWriteParams
-                input.path = tempFilePath
-
-                const fsWrite = new FsWrite(input)
-                await fsWrite.invoke()
-
-                // Check if fileExists=false, If yes, return instead of showing broken diff experience.
-                if (!tempFilePath) {
-                    void vscode.window.showInformationMessage(
-                        'Generated code changes have been reviewed and processed.'
-                    )
-                    return
-                }
-                const leftUri = fileExists ? vscode.Uri.file(filePath) : vscode.Uri.from({ scheme: 'untitled' })
-                const rightUri = vscode.Uri.file(tempFilePath ?? filePath)
-                const fileName = path.basename(filePath)
+                const leftUri = vscode.Uri.file(tempFilePath)
+                const rightUri = vscode.Uri.file(backup.filePath)
+                const fileName = path.basename(backup.filePath)
                 await vscode.commands.executeCommand(
                     'vscode.diff',
                     leftUri,
