@@ -314,7 +314,10 @@ export class Connector extends BaseConnector {
 
         if (
             !this.onChatAnswerUpdated ||
-            !(['accept-code-diff', 'confirm-tool-use'].includes(action.id) || action.id.startsWith('reject-code-diff'))
+            !(
+                ['accept-code-diff', 'run-shell-command', 'reject-shell-command'].includes(action.id) ||
+                action.id.startsWith('reject-code-diff')
+            )
         ) {
             return
         }
@@ -341,17 +344,23 @@ export class Connector extends BaseConnector {
                     answer.body = ' '
                 }
                 break
-            case 'confirm-tool-use':
-                answer.buttons = [
-                    {
-                        keepCardAfterClick: true,
-                        text: 'Confirmed',
-                        id: 'confirmed-tool-use',
+            case 'run-shell-command':
+                if (answer.header) {
+                    answer.header.status = {
+                        icon: 'ok' as MynahIconsType,
+                        text: 'Accepted',
                         status: 'success',
-                        position: 'outside',
-                        disabled: true,
-                    },
-                ]
+                    }
+                }
+                break
+            case 'reject-shell-command':
+                if (answer.header) {
+                    answer.header.status = {
+                        icon: 'cancel' as MynahIconsType,
+                        text: 'Rejected',
+                        status: 'error',
+                    }
+                }
                 break
             default:
                 break
