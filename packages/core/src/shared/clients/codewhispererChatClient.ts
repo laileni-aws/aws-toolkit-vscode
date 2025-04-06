@@ -20,6 +20,7 @@ export async function createCodeWhispererChatStreamingClient(): Promise<CodeWhis
         requestHandler: {
             // TODO: use a real number
             timeoutInMs: 600000, // 10 mins for now
+            connectionTimeout: 600000, // 10 mins for now
         },
         retryStrategy: new ConfiguredRetryStrategy(1, (attempt: number) => 500 + attempt ** 10),
     })
