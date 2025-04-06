@@ -17,6 +17,10 @@ export async function createCodeWhispererChatStreamingClient(): Promise<CodeWhis
         endpoint: cwsprConfig.endpoint,
         token: { token: bearerToken },
         customUserAgent: getUserAgent(),
+        requestHandler: {
+            // TODO: use a real number
+            timeoutInMs: 600000, // 10 mins for now
+        },
         retryStrategy: new ConfiguredRetryStrategy(1, (attempt: number) => 500 + attempt ** 10),
     })
     return streamingClient
