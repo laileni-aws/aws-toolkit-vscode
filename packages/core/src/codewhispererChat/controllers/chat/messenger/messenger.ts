@@ -250,9 +250,11 @@ export class Messenger {
                             const actionId =
                                 tool.type === ToolType.ExecuteBash ? 'run-shell-command' : 'generic-tool-execution'
 
-                            this.dispatcher.sendCustomFormActionMessage(
-                                new CustomFormActionMessage(tabID, { id: actionId })
-                            )
+                            if (!validation.requiresAcceptance) {
+                                this.dispatcher.sendCustomFormActionMessage(
+                                    new CustomFormActionMessage(tabID, { id: actionId })
+                                )
+                            }
                         } else {
                             // TODO: Handle the error
                         }
