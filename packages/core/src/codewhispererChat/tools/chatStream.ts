@@ -32,21 +32,31 @@ export class ChatStream extends Writable {
     }
 
     override _write(chunk: Buffer, encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
-        const text = chunk.toString()
-        this.accumulatedLogs += text
-        this.logger.debug(`ChatStream received chunk: ${text}`)
-        this.messenger.sendPartialToolLog(
-            this.accumulatedLogs,
-            this.tabID,
-            this.triggerID,
-            this.toolUse,
-            this.validation,
-            this.changeList
-        )
-        callback()
+        try {
+            const text = chunk.toString()
+            this.accumulatedLogs += text
+            this.logger.debug(`ChatStream received chunk: ${text}`)
+            this.messenger.sendPartialToolLog(
+                this.accumulatedLogs,
+                this.tabID,
+                this.triggerID,
+                this.toolUse,
+                this.validation,
+                this.changeList
+            )
+            callback()
+        } catch (error) {
+            this.logger.error(`Error in ChatStream.write: ${error}`)
+            callback(error instanceof Error ? error : new Error(String(error)))
+        }
     }
 
     override _final(callback: (error?: Error | null) => void): void {
-        callback()
+        try {
+            callback()
+        } catch (error) {
+            this.logger.error(`Error in ChatStream.final: ${error}`)
+            callback(error instanceof Error ? error : new Error(String(error)))
+        }
     }
 }

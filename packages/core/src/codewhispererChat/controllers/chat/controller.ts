@@ -830,6 +830,20 @@ export class ChatController {
     }
 
     private async processCustomFormAction(message: CustomFormActionMessage) {
+        if (message.action.id.startsWith('reject-code-diff')) {
+            // revert the file changes
+            const toolUseId = message.action.id.split('/')[1]
+            const backups = this.sessionStorage.getSession(message.tabID!).fsWriteBackups
+            const { filePath, content, isNew } = backups.get(toolUseId) ?? {}
+            if (filePath && isNew) {
+                await fs.delete(filePath)
+            } else if (filePath && content !== undefined) {
+                await fs.writeFile(filePath, content)
+            }
+            await this.closeDiffView()
+            return
+        }
+
         switch (message.action.id) {
             case 'submit-create-prompt':
                 await this.handleCreatePrompt(message)
@@ -846,19 +860,6 @@ export class ChatController {
                 break
             default:
                 getLogger().warn(`Unhandled action: ${message.action.id}`)
-        }
-
-        if (message.action.id.startsWith('reject-code-diff')) {
-            // revert the changes
-            const toolUseId = message.action.id.split('/')[1]
-            const backups = this.sessionStorage.getSession(message.tabID!).fsWriteBackups
-            const { filePath, content, isNew } = backups.get(toolUseId) ?? {}
-            if (filePath && isNew) {
-                await fs.delete(filePath)
-            } else if (filePath && content !== undefined) {
-                await fs.writeFile(filePath, content)
-            }
-            await this.closeDiffView()
         }
     }
 
