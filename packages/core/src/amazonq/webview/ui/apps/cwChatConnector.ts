@@ -345,12 +345,22 @@ export class Connector extends BaseConnector {
                 }
                 break
             case 'run-shell-command':
-                if (answer.header) {
-                    answer.header.status = {
+                if (Object.keys(answer.header!).length === 0) {
+                    answer.header = {
+                        body: '$ shell',
+                        status: {
+                            icon: 'ok' as MynahIconsType,
+                            text: 'Accepted',
+                            status: 'success',
+                        },
+                    }
+                } else {
+                    answer.header!.status = {
                         icon: 'ok' as MynahIconsType,
                         text: 'Accepted',
                         status: 'success',
                     }
+                    answer.header!.buttons = []
                 }
                 break
             case 'reject-shell-command':
@@ -360,6 +370,7 @@ export class Connector extends BaseConnector {
                         text: 'Rejected',
                         status: 'error',
                     }
+                    answer.header.buttons = []
                 }
                 break
             default:

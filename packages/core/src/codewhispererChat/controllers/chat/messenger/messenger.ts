@@ -475,13 +475,12 @@ export class Messenger {
             }
 
             shellCommandHeader = {
-                icon: 'code-block' as MynahIconsType,
-                body: 'shell',
+                body: '$ shell',
                 buttons: buttons,
             }
 
             if (validation.warning) {
-                message = validation.warning + message
+                message = validation.warning + message + '\nRun the command to proceed.\n'
             }
         } else if (toolUse?.name === ToolType.FsWrite) {
             const input = toolUse.input as unknown as FsWriteParams
