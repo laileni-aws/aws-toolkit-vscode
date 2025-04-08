@@ -14,7 +14,7 @@ import { ToolkitError } from '../../../../shared/errors'
 import { createCodeWhispererChatStreamingClient } from '../../../../shared/clients/codewhispererChatClient'
 import { createQDeveloperStreamingClient } from '../../../../shared/clients/qDeveloperChatClient'
 import { UserWrittenCodeTracker } from '../../../../codewhisperer/tracker/userWrittenCodeTracker'
-import { PromptMessage } from '../../../controllers/chat/model'
+import { DocumentReference, PromptMessage } from '../../../controllers/chat/model'
 
 export class ChatSession {
     private sessionId?: string
@@ -23,7 +23,7 @@ export class ChatSession {
      * _showDiffOnFileWrite = Controls whether to show diff view (true) or file context view (false) to the user
      * _context = Additional context to be passed to the LLM for generating the response
      */
-    private _readFiles: string[] = []
+    private _readFiles: DocumentReference[] = []
     private _toolUse: ToolUse | undefined
     private _showDiffOnFileWrite: boolean = false
     private _context: PromptMessage['context']
@@ -89,7 +89,7 @@ export class ChatSession {
     public setSessionID(id?: string) {
         this.sessionId = id
     }
-    public get readFiles(): string[] {
+    public get readFiles(): DocumentReference[] {
         return this._readFiles
     }
     public get showDiffOnFileWrite(): boolean {
@@ -98,7 +98,7 @@ export class ChatSession {
     public setShowDiffOnFileWrite(value: boolean) {
         this._showDiffOnFileWrite = value
     }
-    public addToReadFiles(filePath: string) {
+    public addToReadFiles(filePath: DocumentReference) {
         this._readFiles.push(filePath)
     }
     public clearListOfReadFiles() {

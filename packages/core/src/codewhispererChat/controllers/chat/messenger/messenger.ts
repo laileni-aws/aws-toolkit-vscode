@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import * as vscode from 'vscode'
 import { waitUntil } from '../../../../shared/utilities/timeoutUtils'
 import {
     AppToWebViewMessageDispatcher,
@@ -49,6 +50,7 @@ import { noWriteTools, tools } from '../../../constants'
 import { Change } from 'diff'
 import { FsWriteParams } from '../../../tools/fsWrite'
 import { AsyncEventProgressMessage } from '../../../../amazonq/commons/connector/connectorMessages'
+import { FsReadParams } from '../../../tools/fsRead'
 
 export type StaticTextResponseType =
     | 'quick-action-help'
@@ -243,8 +245,34 @@ export class Messenger {
                                 session.setShowDiffOnFileWrite(true)
                                 changeList = await tool.tool.getDiffChanges()
                             }
+                            let lineCount = 0
+                            if (tool.type === ToolType.FsRead) {
+                                const input = toolUse.input as unknown as FsReadParams
+                                // TODO: If readRange is undefined calculate the 0 to # of lines
+                                if (input?.path) {
+                                    // Calculate the number of lines in input?.path
+                                    const fileUri = vscode.Uri.file(input?.path)
+                                    const fileContent = await vscode.workspace.fs.readFile(fileUri)
+                                    const fileContentString = new TextDecoder().decode(fileContent)
+                                    lineCount = fileContentString.split('\n').length
+                                }
+                                const [start, end] = input?.readRange ?? [0, lineCount]
+
+                                session.addToReadFiles({
+                                    relativeFilePath: input?.path,
+                                    lineRanges: [{ first: start, second: end }],
+                                })
+                            }
                             const validation = ToolUtils.requiresAcceptance(tool)
-                            const chatStream = new ChatStream(this, tabID, triggerID, toolUse, validation, changeList)
+                            const chatStream = new ChatStream(
+                                this,
+                                tabID,
+                                triggerID,
+                                toolUse,
+                                session,
+                                validation,
+                                changeList
+                            )
                             await ToolUtils.queueDescription(tool, chatStream)
 
                             const actionId =
@@ -452,6 +480,7 @@ export class Messenger {
         tabID: string,
         triggerID: string,
         toolUse: ToolUse | undefined,
+        session: ChatSession,
         validation: CommandValidation,
         changeList?: Change[]
     ) {
@@ -521,42 +550,48 @@ export class Messenger {
                 icon: 'ok' as MynahIconsType,
             })
         }
+        getLogger().info(`Reading files length: ${session.readFiles?.length}`)
 
-        this.dispatcher.sendChatMessage(
-            new ChatMessage(
-                {
-                    message: toolUse?.name === ToolType.FsWrite ? '  ' : message,
-                    messageType: 'answer-part',
-                    followUps: undefined,
-                    followUpsHeader: undefined,
-                    relatedSuggestions: undefined,
-                    triggerID,
-                    messageID: toolUse?.toolUseId ?? '',
-                    userIntent: undefined,
-                    codeBlockLanguage: undefined,
-                    contextList: undefined,
-                    canBeVoted: false,
-                    buttons:
-                        toolUse?.name === ToolType.FsWrite || toolUse?.name === ToolType.ExecuteBash
-                            ? undefined
-                            : buttons,
-                    fullWidth: toolUse?.name === ToolType.FsWrite || toolUse?.name === ToolType.ExecuteBash,
-                    padding: !(toolUse?.name === ToolType.FsWrite || toolUse?.name === ToolType.ExecuteBash),
-                    header:
-                        toolUse?.name === ToolType.FsWrite
-                            ? { icon: 'code-block' as MynahIconsType, buttons: buttons, fileList: fileList }
-                            : toolUse?.name === ToolType.ExecuteBash
-                              ? shellCommandHeader
-                              : undefined,
-                    codeBlockActions:
-                        toolUse?.name === ToolType.FsWrite || toolUse?.name === ToolType.ExecuteBash
-                            ? // eslint-disable-next-line unicorn/no-null
-                              { 'insert-to-cursor': null, copy: null }
-                            : undefined,
-                },
-                tabID
+        if (toolUse?.name === ToolType.FsRead) {
+            this.sendInitalStream(tabID, triggerID, session.readFiles)
+        } else {
+            this.dispatcher.sendChatMessage(
+                new ChatMessage(
+                    {
+                        message: toolUse?.name === ToolType.FsWrite ? '  ' : message,
+                        messageType: 'answer-part',
+                        followUps: undefined,
+                        followUpsHeader: undefined,
+                        relatedSuggestions: undefined,
+                        triggerID,
+                        messageID: toolUse?.toolUseId ?? '',
+                        userIntent: undefined,
+                        codeBlockLanguage: undefined,
+                        contextList: undefined,
+                        title: undefined,
+                        canBeVoted: false,
+                        buttons:
+                            toolUse?.name === ToolType.FsWrite || toolUse?.name === ToolType.ExecuteBash
+                                ? undefined
+                                : buttons,
+                        fullWidth: toolUse?.name === ToolType.FsWrite || toolUse?.name === ToolType.ExecuteBash,
+                        padding: !(toolUse?.name === ToolType.FsWrite || toolUse?.name === ToolType.ExecuteBash),
+                        header:
+                            toolUse?.name === ToolType.FsWrite
+                                ? { icon: 'code-block' as MynahIconsType, buttons: buttons, fileList: fileList }
+                                : toolUse?.name === ToolType.ExecuteBash
+                                  ? shellCommandHeader
+                                  : undefined,
+                        codeBlockActions:
+                            toolUse?.name === ToolType.FsWrite || toolUse?.name === ToolType.ExecuteBash
+                                ? // eslint-disable-next-line unicorn/no-null
+                                  { 'insert-to-cursor': null, copy: null }
+                                : undefined,
+                    },
+                    tabID
+                )
             )
-        )
+        }
     }
 
     private editorContextMenuCommandVerbs: Map<EditorContextCommandType, string> = new Map([

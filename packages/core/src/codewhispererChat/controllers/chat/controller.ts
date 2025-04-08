@@ -736,7 +736,7 @@ export class ChatController {
                     try {
                         await ToolUtils.validate(tool)
 
-                        const chatStream = new ChatStream(this.messenger, tabID, triggerID, toolUse, {
+                        const chatStream = new ChatStream(this.messenger, tabID, triggerID, toolUse, session, {
                             requiresAcceptance: false,
                         })
                         if (tool.type === ToolType.FsWrite) {
