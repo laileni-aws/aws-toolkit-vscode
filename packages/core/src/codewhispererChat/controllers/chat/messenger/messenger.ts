@@ -15,6 +15,7 @@ import {
     OpenSettingsMessage,
     QuickActionMessage,
     ShowCustomFormMessage,
+    ToolMessage,
 } from '../../../view/connector/connector'
 import { EditorContextCommandType } from '../../../commands/registerCommands'
 import { ChatResponseStream as qdevChatResponseStream } from '@amzn/amazon-q-developer-streaming-client'
@@ -245,6 +246,17 @@ export class Messenger {
                                 session.setShowDiffOnFileWrite(true)
                                 changeList = await tool.tool.getDiffChanges()
                             }
+                            if (
+                                tool.type === ToolType.FsWrite ||
+                                tool.type === ToolType.ExecuteBash
+                                // ||
+                                // eventCounts.has('assistantResponseEvent')
+                            ) {
+                                // FsWrite and ExecuteBash should never replace older messages
+                                // If the current stream also has assistantResponseEvent then reset this as well.
+                                session.setMessageIdToUpdate(undefined)
+                            }
+
                             let lineCount = 0
                             if (tool.type === ToolType.FsRead) {
                                 const input = toolUse.input as unknown as FsReadParams
@@ -269,11 +281,19 @@ export class Messenger {
                                 triggerID,
                                 toolUse,
                                 session,
+                                session.messageIdToUpdate,
                                 true,
                                 validation,
                                 changeList
                             )
                             await ToolUtils.queueDescription(tool, chatStream)
+                            if (
+                                session.messageIdToUpdate === undefined &&
+                                (tool.type === ToolType.FsRead || tool.type === ToolType.ListDirectory)
+                            ) {
+                                // Store the first messageId in a chain of tool uses
+                                session.setMessageIdToUpdate(toolUse.toolUseId)
+                            }
 
                             const actionId =
                                 tool.type === ToolType.ExecuteBash ? 'run-shell-command' : 'generic-tool-execution'
@@ -463,6 +483,26 @@ export class Messenger {
             })
     }
 
+    public sendInitialToolMessage(tabID: string, triggerID: string, toolUseId: string | undefined) {
+        this.dispatcher.sendChatMessage(
+            new ChatMessage(
+                {
+                    message: '',
+                    messageType: 'answer',
+                    followUps: undefined,
+                    followUpsHeader: undefined,
+                    relatedSuggestions: undefined,
+                    triggerID,
+                    messageID: toolUseId ?? 'toolUse',
+                    userIntent: undefined,
+                    codeBlockLanguage: undefined,
+                    contextList: undefined,
+                },
+                tabID
+            )
+        )
+    }
+
     public sendErrorMessage(errorMessage: string | undefined, tabID: string, requestID: string | undefined) {
         this.showChatExceptionMessage(
             {
@@ -481,6 +521,7 @@ export class Messenger {
         triggerID: string,
         toolUse: ToolUse | undefined,
         session: ChatSession,
+        messageIdToUpdate: string | undefined,
         validation: CommandValidation,
         changeList?: Change[]
     ) {
@@ -553,7 +594,29 @@ export class Messenger {
         getLogger().info(`Reading files length: ${session.readFiles?.length}`)
 
         if (toolUse?.name === ToolType.FsRead) {
-            this.sendInitalStream(tabID, triggerID, session.readFiles)
+            this.dispatcher.sendToolMessage(
+                new ToolMessage(
+                    {
+                        message: '',
+                        messageType: 'answer-part',
+                        followUps: undefined,
+                        followUpsHeader: undefined,
+                        relatedSuggestions: undefined,
+                        triggerID,
+                        messageID: messageIdToUpdate ?? toolUse?.toolUseId ?? '',
+                        userIntent: undefined,
+                        codeBlockLanguage: undefined,
+                        contextList: session.readFiles,
+                        canBeVoted: false,
+                        buttons,
+                        fullWidth: false,
+                        padding: true,
+                        codeBlockActions: undefined,
+                        title: 'Reading Files',
+                    },
+                    tabID
+                )
+            )
         } else {
             this.dispatcher.sendChatMessage(
                 new ChatMessage(

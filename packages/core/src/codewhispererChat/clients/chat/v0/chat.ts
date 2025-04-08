@@ -22,6 +22,7 @@ export class ChatSession {
      * _readFiles = list of files read from the project to gather context before generating response.
      * _showDiffOnFileWrite = Controls whether to show diff view (true) or file context view (false) to the user
      * _context = Additional context to be passed to the LLM for generating the response
+     * _messageIdToUpdate = messageId of a chat message to be updated, used for reducing consecutive tool messages
      */
     private _readFiles: DocumentReference[] = []
     private _toolUse: ToolUse | undefined
@@ -29,6 +30,7 @@ export class ChatSession {
     private _context: PromptMessage['context']
     private _pairProgrammingModeOn: boolean = true
     private _fsWriteBackups: Map<string, { filePath: string; content: string; isNew: boolean }> = new Map()
+    private _messageIdToUpdate: string | undefined
 
     contexts: Map<string, { first: number; second: number }[]> = new Map()
     // TODO: doesn't handle the edge case when two files share the same relativePath string but from different root
@@ -36,6 +38,13 @@ export class ChatSession {
     relativePathToWorkspaceRoot: Map<string, string> = new Map()
     public get sessionIdentifier(): string | undefined {
         return this.sessionId
+    }
+    public get messageIdToUpdate(): string | undefined {
+        return this._messageIdToUpdate
+    }
+
+    public setMessageIdToUpdate(messageId: string | undefined) {
+        this._messageIdToUpdate = messageId
     }
 
     public get pairProgrammingModeOn(): boolean {

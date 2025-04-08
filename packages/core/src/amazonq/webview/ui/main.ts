@@ -325,8 +325,40 @@ export const createMynahUI = (
         sendMessageToExtension: (message) => {
             ideApi.postMessage(message)
         },
-        onChatAnswerUpdated: (tabID: string, item: ChatItem) => {
+        onChatAnswerUpdated: (tabID: string, item: CWCChatItem) => {
             if (item.messageId !== undefined) {
+                // eslint-disable-next-line aws-toolkits/no-console-log
+                console.log('onChatAnswerUpdated Before', item)
+                if (item.contextList !== undefined && item.contextList.length > 0) {
+                    item.header = {
+                        fileList: {
+                            fileTreeTitle: '',
+                            filePaths: item.contextList.map((file) => file.relativeFilePath),
+                            rootFolderTitle: item.title,
+                            flatList: true,
+                            collapsed: true,
+                            hideFileCount: true,
+                            details: Object.fromEntries(
+                                item.contextList.map((file) => [
+                                    file.relativeFilePath,
+                                    {
+                                        label: file.lineRanges
+                                            .map((range) =>
+                                                range.first === -1 || range.second === -1
+                                                    ? ''
+                                                    : `line ${range.first} - ${range.second}`
+                                            )
+                                            .join(', '),
+                                        description: file.relativeFilePath,
+                                        clickable: true,
+                                    },
+                                ])
+                            ),
+                        },
+                    }
+                }
+                // eslint-disable-next-line aws-toolkits/no-console-log
+                console.log('onChatAnswerUpdated After', item)
                 mynahUI.updateChatAnswerWithMessageId(tabID, item.messageId, {
                     ...(item.body !== undefined ? { body: item.body } : {}),
                     ...(item.buttons !== undefined ? { buttons: item.buttons } : {}),
@@ -341,6 +373,8 @@ export const createMynahUI = (
                     ...(item.codeBlockActions !== undefined ? { codeBlockActions: item.codeBlockActions } : {}),
                 })
             } else {
+                // eslint-disable-next-line aws-toolkits/no-console-log
+                console.log('onChatAnswerUpdated updateLastChatAnswer', item)
                 mynahUI.updateLastChatAnswer(tabID, {
                     ...(item.body !== undefined ? { body: item.body } : {}),
                     ...(item.buttons !== undefined ? { buttons: item.buttons } : {}),

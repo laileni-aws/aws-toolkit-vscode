@@ -742,6 +742,7 @@ export class ChatController {
                             triggerID,
                             { ...toolUse, toolUseId: `${toolUse.toolUseId}-output` },
                             session,
+                            undefined,
                             false,
                             {
                                 requiresAcceptance: false,

@@ -25,6 +25,7 @@ export class ChatStream extends Writable {
         private readonly triggerID: string,
         private readonly toolUse: ToolUse | undefined,
         private readonly session: ChatSession,
+        private readonly messageIdToUpdate: string | undefined,
         private readonly show: boolean,
         private readonly validation: CommandValidation,
         private readonly changeList?: Change[],
@@ -35,7 +36,12 @@ export class ChatStream extends Writable {
             `ChatStream created for tabID: ${tabID}, triggerID: ${triggerID}, session: ${session.readFiles}`
         )
         if (toolUse?.name === ToolType.FsRead && show) {
-            this.messenger.sendInitalStream(tabID, triggerID, session.readFiles)
+            // this.messenger.sendInitalStream(tabID, triggerID, session.readFiles)
+            if (!messageIdToUpdate) {
+                // If messageIdToUpdate is undefined, we need to first create an empty message
+                // with messageId so it can be updated later
+                this.messenger.sendInitialToolMessage(tabID, triggerID, toolUse?.toolUseId)
+            }
         } else if (!(toolUse?.name === ToolType.FsRead)) {
             this.messenger.sendInitalStream(tabID, triggerID, undefined)
         }
@@ -52,6 +58,7 @@ export class ChatStream extends Writable {
                 this.triggerID,
                 this.toolUse,
                 this.session,
+                this.messageIdToUpdate,
                 this.validation,
                 this.changeList
             )
