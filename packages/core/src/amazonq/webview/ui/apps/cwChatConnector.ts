@@ -314,10 +314,14 @@ export class Connector extends BaseConnector {
 
         if (
             !this.onChatAnswerUpdated ||
-            !(
-                ['accept-code-diff', 'run-shell-command', 'reject-shell-command'].includes(action.id) ||
-                action.id.startsWith('reject-code-diff')
-            )
+            ![
+                'accept-code-diff',
+                'reject-code-diff',
+                'run-shell-command',
+                'reject-shell-command',
+                'confirm-tool-use',
+                'reject-tool-use',
+            ].includes(action.id)
         ) {
             return
         }
@@ -372,6 +376,30 @@ export class Connector extends BaseConnector {
                     }
                     answer.header.buttons = []
                 }
+                break
+            case 'confirm-tool-use':
+                answer.buttons = [
+                    {
+                        keepCardAfterClick: true,
+                        text: 'Confirmed',
+                        id: 'confirmed-tool-use',
+                        status: 'success',
+                        position: 'outside',
+                        disabled: true,
+                    },
+                ]
+                break
+            case 'reject-tool-use':
+                answer.buttons = [
+                    {
+                        keepCardAfterClick: true,
+                        text: 'Rejected',
+                        id: 'rejected-tool-use',
+                        status: 'error',
+                        position: 'outside',
+                        disabled: true,
+                    },
+                ]
                 break
             default:
                 break

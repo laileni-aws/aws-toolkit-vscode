@@ -482,6 +482,17 @@ export class Messenger {
             if (validation.warning) {
                 message = validation.warning + message + '\nRun the command to proceed.\n'
             }
+        } else if (validation.requiresAcceptance) {
+            buttons.push({
+                id: 'reject-tool-use',
+                text: 'Reject',
+                status: 'info',
+            })
+            buttons.push({
+                id: 'confirm-tool-use',
+                text: 'Confirm',
+                status: 'info',
+            })
         } else if (toolUse?.name === ToolType.FsWrite) {
             const input = toolUse.input as unknown as FsWriteParams
             const fileName = path.basename(input.path)
