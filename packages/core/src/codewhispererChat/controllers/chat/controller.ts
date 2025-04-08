@@ -736,9 +736,17 @@ export class ChatController {
                     try {
                         await ToolUtils.validate(tool)
 
-                        const chatStream = new ChatStream(this.messenger, tabID, triggerID, toolUse, session, {
-                            requiresAcceptance: false,
-                        })
+                        const chatStream = new ChatStream(
+                            this.messenger,
+                            tabID,
+                            triggerID,
+                            { ...toolUse, toolUseId: `${toolUse.toolUseId}-output` },
+                            session,
+                            false,
+                            {
+                                requiresAcceptance: false,
+                            }
+                        )
                         if (tool.type === ToolType.FsWrite) {
                             const backup = await tool.tool.getOldContent()
                             session.setFsWriteBackups(toolUse.toolUseId, backup)

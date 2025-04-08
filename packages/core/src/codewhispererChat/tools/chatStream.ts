@@ -25,6 +25,7 @@ export class ChatStream extends Writable {
         private readonly triggerID: string,
         private readonly toolUse: ToolUse | undefined,
         private readonly session: ChatSession,
+        private readonly show: boolean,
         private readonly validation: CommandValidation,
         private readonly changeList?: Change[],
         private readonly logger = getLogger('chatStream')
@@ -33,9 +34,9 @@ export class ChatStream extends Writable {
         this.logger.debug(
             `ChatStream created for tabID: ${tabID}, triggerID: ${triggerID}, session: ${session.readFiles}`
         )
-        if (toolUse?.name === ToolType.FsRead) {
+        if (toolUse?.name === ToolType.FsRead && show) {
             this.messenger.sendInitalStream(tabID, triggerID, session.readFiles)
-        } else {
+        } else if (!(toolUse?.name === ToolType.FsRead)) {
             this.messenger.sendInitalStream(tabID, triggerID, undefined)
         }
     }

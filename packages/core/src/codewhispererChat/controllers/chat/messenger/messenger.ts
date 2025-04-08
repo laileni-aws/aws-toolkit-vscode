@@ -248,15 +248,14 @@ export class Messenger {
                             let lineCount = 0
                             if (tool.type === ToolType.FsRead) {
                                 const input = toolUse.input as unknown as FsReadParams
-                                // TODO: If readRange is undefined calculate the 0 to # of lines
-                                if (input?.path) {
+                                if (input?.path && tool.type === ToolType.FsRead) {
                                     // Calculate the number of lines in input?.path
                                     const fileUri = vscode.Uri.file(input?.path)
                                     const fileContent = await vscode.workspace.fs.readFile(fileUri)
                                     const fileContentString = new TextDecoder().decode(fileContent)
                                     lineCount = fileContentString.split('\n').length
                                 }
-                                const [start, end] = input?.readRange ?? [0, lineCount]
+                                const [start, end] = input?.readRange ?? [0, lineCount - 1]
 
                                 session.addToReadFiles({
                                     relativeFilePath: input?.path,
@@ -270,6 +269,7 @@ export class Messenger {
                                 triggerID,
                                 toolUse,
                                 session,
+                                true,
                                 validation,
                                 changeList
                             )
