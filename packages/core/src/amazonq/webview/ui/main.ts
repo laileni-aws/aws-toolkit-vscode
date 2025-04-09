@@ -325,13 +325,40 @@ export const createMynahUI = (
         sendMessageToExtension: (message) => {
             ideApi.postMessage(message)
         },
-        onChatAnswerUpdated: (tabID: string, item: ChatItem) => {
+        onChatAnswerUpdated: (tabID: string, item: CWCChatItem) => {
             if (item.messageId !== undefined) {
+                if (item.contextList !== undefined && item.contextList.length > 0) {
+                    item.header = {
+                        fileList: {
+                            fileTreeTitle: '',
+                            filePaths: item.contextList.map((file) => file.relativeFilePath),
+                            rootFolderTitle: item.title,
+                            flatList: true,
+                            collapsed: true,
+                            hideFileCount: true,
+                            details: Object.fromEntries(
+                                item.contextList.map((file) => [
+                                    file.relativeFilePath,
+                                    {
+                                        label: file.lineRanges
+                                            .map((range) =>
+                                                range.first === -1 || range.second === -1
+                                                    ? ''
+                                                    : `line ${range.first} - ${range.second}`
+                                            )
+                                            .join(', '),
+                                        description: file.relativeFilePath,
+                                        clickable: true,
+                                    },
+                                ])
+                            ),
+                        },
+                    }
+                }
                 mynahUI.updateChatAnswerWithMessageId(tabID, item.messageId, {
                     ...(item.body !== undefined ? { body: item.body } : {}),
                     ...(item.buttons !== undefined ? { buttons: item.buttons } : {}),
                     ...(item.followUp !== undefined ? { followUp: item.followUp } : {}),
-                    ...(item.footer !== undefined ? { footer: item.footer } : {}),
                     ...(item.canBeVoted !== undefined ? { canBeVoted: item.canBeVoted } : {}),
                     ...(item.fileList !== undefined ? { fileList: item.fileList } : {}),
                     ...(item.header !== undefined ? { header: item.header } : {}),
@@ -341,6 +368,8 @@ export const createMynahUI = (
                     ...(item.codeBlockActions !== undefined ? { codeBlockActions: item.codeBlockActions } : {}),
                 })
             } else {
+                // eslint-disable-next-line aws-toolkits/no-console-log
+                console.log('onChatAnswerUpdated updateLastChatAnswer', item)
                 mynahUI.updateLastChatAnswer(tabID, {
                     ...(item.body !== undefined ? { body: item.body } : {}),
                     ...(item.buttons !== undefined ? { buttons: item.buttons } : {}),

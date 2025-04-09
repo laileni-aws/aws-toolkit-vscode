@@ -9,6 +9,8 @@ import { Messenger } from '../controllers/chat/messenger/messenger'
 import { ToolUse } from '@amzn/codewhisperer-streaming'
 import { CommandValidation } from './executeBash'
 import { Change } from 'diff'
+import { ChatSession } from '../clients/chat/v0/chat'
+import { ToolType } from './toolUtils'
 
 /**
  * A writable stream that feeds each chunk/line to the chat UI.
@@ -22,25 +24,41 @@ export class ChatStream extends Writable {
         private readonly tabID: string,
         private readonly triggerID: string,
         private readonly toolUse: ToolUse | undefined,
+        private readonly session: ChatSession,
+        private readonly messageIdToUpdate: string | undefined,
+        private readonly show: boolean,
         private readonly validation: CommandValidation,
         private readonly changeList?: Change[],
         private readonly logger = getLogger('chatStream')
     ) {
         super()
-        this.logger.debug(`ChatStream created for tabID: ${tabID}, triggerID: ${triggerID}`)
-        this.messenger.sendInitalStream(tabID, triggerID, undefined)
+        this.logger.debug(
+            `ChatStream created for tabID: ${tabID}, triggerID: ${triggerID}, session: ${session.readFiles}, show: ${show}`
+        )
+        if (toolUse?.name === ToolType.FsRead && show) {
+            // this.messenger.sendInitalStream(tabID, triggerID, session.readFiles)
+            if (!messageIdToUpdate) {
+                // If messageIdToUpdate is undefined, we need to first create an empty message
+                // with messageId so it can be updated later
+                this.messenger.sendInitialToolMessage(tabID, triggerID, toolUse?.toolUseId)
+            }
+        } else if (!(toolUse?.name === ToolType.FsRead)) {
+            this.messenger.sendInitalStream(tabID, triggerID, undefined)
+        }
     }
 
     override _write(chunk: Buffer, encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
         try {
             const text = chunk.toString()
             this.accumulatedLogs += text
-            this.logger.debug(`ChatStream received chunk: ${text}`)
+            this.logger.debug(`ChatStream received chunk: ${text}, show: ${this.show}`)
             this.messenger.sendPartialToolLog(
                 this.accumulatedLogs,
                 this.tabID,
                 this.triggerID,
                 this.toolUse,
+                this.session,
+                this.messageIdToUpdate,
                 this.validation,
                 this.changeList
             )
