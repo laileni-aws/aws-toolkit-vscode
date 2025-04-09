@@ -327,8 +327,6 @@ export const createMynahUI = (
         },
         onChatAnswerUpdated: (tabID: string, item: CWCChatItem) => {
             if (item.messageId !== undefined) {
-                // eslint-disable-next-line aws-toolkits/no-console-log
-                console.log('onChatAnswerUpdated Before', item)
                 if (item.contextList !== undefined && item.contextList.length > 0) {
                     item.header = {
                         fileList: {
@@ -357,13 +355,10 @@ export const createMynahUI = (
                         },
                     }
                 }
-                // eslint-disable-next-line aws-toolkits/no-console-log
-                console.log('onChatAnswerUpdated After', item)
                 mynahUI.updateChatAnswerWithMessageId(tabID, item.messageId, {
                     ...(item.body !== undefined ? { body: item.body } : {}),
                     ...(item.buttons !== undefined ? { buttons: item.buttons } : {}),
                     ...(item.followUp !== undefined ? { followUp: item.followUp } : {}),
-                    ...(item.footer !== undefined ? { footer: item.footer } : {}),
                     ...(item.canBeVoted !== undefined ? { canBeVoted: item.canBeVoted } : {}),
                     ...(item.fileList !== undefined ? { fileList: item.fileList } : {}),
                     ...(item.header !== undefined ? { header: item.header } : {}),

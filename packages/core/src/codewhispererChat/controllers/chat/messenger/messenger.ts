@@ -246,16 +246,6 @@ export class Messenger {
                                 session.setShowDiffOnFileWrite(true)
                                 changeList = await tool.tool.getDiffChanges()
                             }
-                            if (
-                                tool.type === ToolType.FsWrite ||
-                                tool.type === ToolType.ExecuteBash
-                                // ||
-                                // eventCounts.has('assistantResponseEvent')
-                            ) {
-                                // FsWrite and ExecuteBash should never replace older messages
-                                // If the current stream also has assistantResponseEvent then reset this as well.
-                                session.setMessageIdToUpdate(undefined)
-                            }
 
                             let lineCount = 0
                             if (tool.type === ToolType.FsRead) {
@@ -287,10 +277,7 @@ export class Messenger {
                                 changeList
                             )
                             await ToolUtils.queueDescription(tool, chatStream)
-                            if (
-                                session.messageIdToUpdate === undefined &&
-                                (tool.type === ToolType.FsRead || tool.type === ToolType.ListDirectory)
-                            ) {
+                            if (session.messageIdToUpdate === undefined && tool.type === ToolType.FsRead) {
                                 // Store the first messageId in a chain of tool uses
                                 session.setMessageIdToUpdate(toolUse.toolUseId)
                             }

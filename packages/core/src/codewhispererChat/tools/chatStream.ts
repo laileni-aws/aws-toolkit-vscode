@@ -33,7 +33,7 @@ export class ChatStream extends Writable {
     ) {
         super()
         this.logger.debug(
-            `ChatStream created for tabID: ${tabID}, triggerID: ${triggerID}, session: ${session.readFiles}`
+            `ChatStream created for tabID: ${tabID}, triggerID: ${triggerID}, session: ${session.readFiles}, show: ${show}`
         )
         if (toolUse?.name === ToolType.FsRead && show) {
             // this.messenger.sendInitalStream(tabID, triggerID, session.readFiles)
@@ -51,7 +51,7 @@ export class ChatStream extends Writable {
         try {
             const text = chunk.toString()
             this.accumulatedLogs += text
-            this.logger.debug(`ChatStream received chunk: ${text}`)
+            this.logger.debug(`ChatStream received chunk: ${text}, show: ${this.show}`)
             this.messenger.sendPartialToolLog(
                 this.accumulatedLogs,
                 this.tabID,

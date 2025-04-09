@@ -187,7 +187,7 @@ export class FsWrite {
 
     private async getInsertContent(params: InsertParams, sanitizedPath: string): Promise<string> {
         const fileContent = await fs.readFileText(sanitizedPath)
-        const lines = fileContent.split('\n')
+        const lines = fileContent.split('\n') // TODO: Handle "Details: Error reading chat stream: Cannot read properties of undefined (reading 'split')"
 
         const numLines = lines.length
         const insertLine = Math.max(0, Math.min(params.insertLine, numLines))
