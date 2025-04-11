@@ -29,7 +29,7 @@ export class ChatStream extends Writable {
         private readonly messageIdToUpdate: string | undefined,
         // emitEvent decides to show the streaming message or read/list directory tool message to the user.
         private readonly emitEvent: boolean,
-        private readonly validation: CommandValidation,
+        readonly validation: CommandValidation,
         private readonly isReadorList: boolean,
         private readonly changeList?: Change[],
         private readonly logger = getLogger('chatStream')
@@ -41,7 +41,13 @@ export class ChatStream extends Writable {
         if (!emitEvent) {
             return
         }
-        if (validation.requiresAcceptance) {
+        if (validation.requiresAcceptance && isReadorList) {
+            this.messenger.sendDirectiveMessage(
+                tabID,
+                triggerID,
+                i18n('AWS.amazonq.chat.directive.permission.readAndList')
+            )
+        } else if (validation.requiresAcceptance) {
             this.messenger.sendDirectiveMessage(
                 tabID,
                 triggerID,
