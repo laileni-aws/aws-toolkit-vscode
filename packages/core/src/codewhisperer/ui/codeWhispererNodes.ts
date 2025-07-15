@@ -30,6 +30,33 @@ import { focusAmazonQPanel } from '../../codewhispererChat/commands/registerComm
 import { isWeb } from '../../shared/extensionGlobals'
 import { getLogger } from '../../shared/logger/logger'
 
+// Keep a reference to the active Q CLI terminal
+let qCliTerminal: vscode.Terminal | undefined
+
+// Function to initialize terminal persistence
+export function initializeQCliTerminal(): void {
+    // Auto-open the terminal when extension activates
+    setTimeout(() => {
+        try {
+            // Only open automatically if no terminal exists yet
+            if (!qCliTerminal) {
+                const item = createOpenQCli()
+                if (item && typeof item.onClick === 'function') {
+                    item.onClick()
+                }
+            }
+        } catch (error) {
+            getLogger().error('Failed to initialize Q CLI terminal: %s', error)
+        }
+    }, 2000)
+    // Listen for terminal close events to update state
+    vscode.window.onDidCloseTerminal((terminal) => {
+        if (terminal === qCliTerminal) {
+            qCliTerminal = undefined
+        }
+    })
+}
+
 export function createAutoSuggestions(running: boolean): DataQuickPickItem<'autoSuggestions'> {
     const labelResume = localize('AWS.codewhisperer.resumeCodeWhispererNode.label', 'Resume Auto-Suggestions')
     const iconResume = getIcon('vscode-debug-start')
@@ -256,6 +283,71 @@ export function switchToAmazonQNode(): DataQuickPickItem<'openChatPanel'> {
                 getLogger().error('focusAmazonQPanel failed: %s', e)
             }),
     }
+}
+
+export function createOpenQCli(
+    customIconName?: 'vscode-terminal' | 'vscode-code' | 'vscode-edit' | 'vscode-comment'
+): DataQuickPickItem<'openQCli'> {
+    const label = 'Open Q CLI'
+    const icon = getIcon('vscode-comment') // Using comment icon as requested
+
+    return {
+        data: 'openQCli',
+        label: codicon`${icon} ${label}`,
+        // description: 'Open Q CLI with Chat',
+        onClick: () => {
+            try {
+                // First create the terminal in the editor area
+                const terminal = vscode.window.createTerminal({
+                    name: 'Amazon Q CLI',
+                    location: vscode.TerminalLocation.Editor,
+                    message: `\x1b[1m\x1b[36m=== Welcome to Amazon Q CLI ===\x1b[0m\n`,
+                    iconPath: new vscode.ThemeIcon(customIconName || 'vscode-comment'),
+                })
+
+                if (!terminal) {
+                    getLogger().error('Failed to create terminal for Q CLI')
+                    return
+                }
+
+                // Store reference to the terminal
+                qCliTerminal = terminal
+
+                // Show the terminal
+                terminal.show()
+
+                // Split the editor and move terminal to right side, then run q chat when ready
+                void vscode.commands
+                    .executeCommand('workbench.action.moveEditorToRightGroup')
+                    // .then(() => vscode.commands.executeCommand('workbench.action.pinEditor')) // No need to pin the editor
+                    .then(() => {
+                        // Wait to ensure terminal is fully initialized and positioned
+                        setTimeout(() => {
+                            // Verify terminal still exists before sending command
+                            if (terminal) {
+                                try {
+                                    terminal.sendText('q chat')
+                                    getLogger().debug('Successfully executed q chat in terminal')
+                                } catch (cmdError: unknown) {
+                                    getLogger().error(
+                                        'Failed to execute command in terminal: %s',
+                                        cmdError instanceof Error ? cmdError.message : String(cmdError)
+                                    )
+                                }
+                            }
+                        }, 2000) // Increased delay for better reliability
+                    })
+                    .then(undefined, (error: Error) => {
+                        getLogger().error('Failed to position terminal: %s', error)
+                    })
+            } catch (error: unknown) {
+                getLogger().error(
+                    'Failed to create terminal: %s',
+                    error instanceof Error ? error.message : String(error)
+                )
+            }
+        },
+    } as DataQuickPickItem<'openQCli'>
 }
 
 export function createSignIn(): DataQuickPickItem<'signIn'> {

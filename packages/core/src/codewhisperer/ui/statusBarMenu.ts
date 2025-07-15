@@ -23,6 +23,7 @@ import {
     switchToAmazonQNode,
     createSecurityScan,
     createSelectRegionProfileNode,
+    createOpenQCli,
 } from './codeWhispererNodes'
 import { hasVendedIamCredentials, hasVendedCredentialsFromMetadata } from '../../auth/auth'
 import { AuthUtil } from '../util/authUtil'
@@ -82,6 +83,7 @@ function getAmazonQCodeWhispererNodes() {
             ? [createSelectCustomization()]
             : []),
         switchToAmazonQNode(),
+        createOpenQCli(),
     ]
 }
 

@@ -85,6 +85,7 @@ import { syncSecurityIssueWebview } from './views/securityIssue/securityIssueWeb
 import { detectCommentAboveLine } from '../shared/utilities/commentUtils'
 import { activateEditTracking } from './nextEditPrediction/activation'
 import { notifySelectDeveloperProfile } from './region/utils'
+import { initializeQCliTerminal } from './ui/codeWhispererNodes'
 
 let localize: nls.LocalizeFunc
 
@@ -484,6 +485,9 @@ export async function activate(context: ExtContext): Promise<void> {
     }
 
     activateEditTracking(context)
+
+    // Initialize the Q CLI terminal with automatic opening
+    initializeQCliTerminal()
 }
 
 export async function shutdown() {
