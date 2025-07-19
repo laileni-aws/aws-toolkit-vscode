@@ -335,8 +335,7 @@ export class AmazonQInlineCompletionItemProvider implements InlineCompletionItem
                 context,
                 token,
                 isAutoTrigger,
-                getAllRecommendationsOptions,
-                this.documentEventListener.getLastDocumentChangeEvent(document.uri.fsPath)?.event
+                getAllRecommendationsOptions
             )
             // get active item from session for displaying
             const items = this.sessionManager.getActiveRecommendation()
