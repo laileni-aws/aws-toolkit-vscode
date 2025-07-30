@@ -7,19 +7,19 @@ import * as vscode from 'vscode'
 import * as sinon from 'sinon'
 import assert from 'assert'
 import { EditorContentController, ViewDiffMessage } from '../../../../amazonq/commons/controllers/contentController'
-import * as textDocumentUtilities from '../../../../shared/utilities/textDocumentUtilities'
-import * as textUtilities from '../../../../shared/utilities/textUtilities'
-import { amazonQDiffScheme, amazonQTabSuffix } from '../../../../shared/constants'
-import * as editorUtilities from '../../../../shared/utilities/editorUtilities'
+import { amazonQTabSuffix } from '../../../../shared/constants'
+import fs from '../../../../shared/fs/fs'
+import * as os from 'os'
+import * as path from 'path'
 
 describe('EditorContentController', () => {
     let sandbox: sinon.SinonSandbox
     let controller: EditorContentController
     let executeCommandStub: sinon.SinonStub
-    let registerTextDocumentContentProviderStub: sinon.SinonStub
-    let createTempUrisForDiffStub: sinon.SinonStub
-    let disposeOnEditorCloseStub: sinon.SinonStub
-    let extractParamsFromMessageStub: sinon.SinonStub
+    let fsMkdirStub: sinon.SinonStub
+    let fsWriteFileStub: sinon.SinonStub
+    let fsReadFileTextStub: sinon.SinonStub
+    let tabGroupsOnDidChangeTabsStub: sinon.SinonStub
 
     beforeEach(() => {
         sandbox = sinon.createSandbox()
@@ -27,14 +27,20 @@ describe('EditorContentController', () => {
 
         // Stub VS Code API calls
         executeCommandStub = sandbox.stub(vscode.commands, 'executeCommand').resolves()
-        registerTextDocumentContentProviderStub = sandbox
-            .stub(vscode.workspace, 'registerTextDocumentContentProvider')
-            .returns({ dispose: () => {} })
 
-        // Stub utility functions
-        createTempUrisForDiffStub = sandbox.stub(textDocumentUtilities, 'createTempUrisForDiff')
-        disposeOnEditorCloseStub = sandbox.stub(editorUtilities, 'disposeOnEditorClose')
-        extractParamsFromMessageStub = sandbox.stub(textUtilities, 'extractFileAndCodeSelectionFromMessage')
+        // Stub file system operations
+        fsMkdirStub = sandbox.stub(fs, 'mkdir').resolves()
+        fsWriteFileStub = sandbox.stub(fs, 'writeFile').resolves()
+        fsReadFileTextStub = sandbox.stub(fs, 'readFileText').resolves('original file content')
+
+        // Stub OS operations
+        sandbox.stub(os, 'tmpdir').returns('/tmp')
+
+        // Stub tab groups and workspace events
+        tabGroupsOnDidChangeTabsStub = sandbox
+            .stub(vscode.window.tabGroups, 'onDidChangeTabs')
+            .returns({ dispose: () => {} })
+        sandbox.stub(vscode.workspace, 'onDidSaveTextDocument').returns({ dispose: () => {} })
     })
 
     afterEach(() => {
@@ -43,100 +49,161 @@ describe('EditorContentController', () => {
 
     describe('viewDiff', () => {
         const testFilePath = '/path/to/testFile.js'
-        const testCode = 'new code'
-        const testSelection = new vscode.Selection(new vscode.Position(1, 0), new vscode.Position(2, 0))
+        const testOriginalContent = 'original file content'
+        const testModifiedContent = 'modified file content'
         const testMessage: ViewDiffMessage = {
-            code: testCode,
+            code: testModifiedContent,
+            context: {
+                activeFileContext: {
+                    filePath: testFilePath,
+                    fileText: testOriginalContent,
+                    fileLanguage: 'javascript',
+                    matchPolicy: undefined,
+                },
+                focusAreaContext: {
+                    selectionInsideExtendedCodeBlock: new vscode.Selection(0, 0, 0, 0),
+                    codeBlock: '',
+                    extendedCodeBlock: '',
+                    names: undefined,
+                },
+            },
         }
-        const originalUri = vscode.Uri.parse('test-scheme:/original/testFile.js')
-        const modifiedUri = vscode.Uri.parse('test-scheme:/modified/testFile.js')
 
         beforeEach(() => {
-            extractParamsFromMessageStub.returns({
-                filePath: testFilePath,
-                selection: testSelection,
-            })
-            createTempUrisForDiffStub.resolves([originalUri, modifiedUri])
+            // Reset stubs for each test
+            fsMkdirStub.resetHistory()
+            fsWriteFileStub.resetHistory()
+            fsReadFileTextStub.resetHistory()
+            executeCommandStub.resetHistory()
+            tabGroupsOnDidChangeTabsStub.resetHistory()
+
+            // Set up default return value for reading the current file content
+            fsReadFileTextStub.returns(Promise.resolve(testModifiedContent))
         })
 
-        it('should show diff view with correct URIs and title', async () => {
+        it('should show editable diff view with original and current file content', async () => {
             await controller.viewDiff(testMessage)
 
-            // Verify content provider was registered
-            assert.strictEqual(registerTextDocumentContentProviderStub.calledOnce, true)
-            assert.strictEqual(registerTextDocumentContentProviderStub.firstCall.args[0], amazonQDiffScheme)
+            // Verify current file content was read
+            assert.strictEqual(fsReadFileTextStub.calledOnce, true)
+            assert.strictEqual(fsReadFileTextStub.firstCall.args[0], testFilePath)
 
-            // Verify createTempUrisForDiff was called with correct parameters
-            assert.strictEqual(createTempUrisForDiffStub.calledOnce, true)
-            assert.strictEqual(createTempUrisForDiffStub.firstCall.args[0], testFilePath)
-            assert.strictEqual(createTempUrisForDiffStub.firstCall.args[2], testMessage)
-            assert.strictEqual(createTempUrisForDiffStub.firstCall.args[3], testSelection)
-            assert.strictEqual(createTempUrisForDiffStub.firstCall.args[4], amazonQDiffScheme)
+            // Verify temp directory was created
+            assert.strictEqual(fsMkdirStub.calledOnce, true)
+            assert.strictEqual(fsMkdirStub.firstCall.args[0], path.join('/tmp', 'amazonq-diff'))
 
-            // Verify vscode.diff command was executed with correct parameters
+            // Verify both temp files were written (original and current file content)
+            assert.strictEqual(fsWriteFileStub.calledTwice, true)
+
+            // First call should write original content
+            const originalTempPath = fsWriteFileStub.firstCall.args[0]
+            const originalContent = fsWriteFileStub.firstCall.args[1]
+            assert(originalTempPath.includes('testFile_original_'))
+            assert(originalTempPath.endsWith('.js'))
+            assert.strictEqual(originalContent, testOriginalContent)
+
+            // Second call should write current file content (read from file)
+            const modifiedTempPath = fsWriteFileStub.secondCall.args[0]
+            const modifiedContent = fsWriteFileStub.secondCall.args[1]
+            assert(modifiedTempPath.includes('testFile_modified_'))
+            assert(modifiedTempPath.endsWith('.js'))
+            assert.strictEqual(modifiedContent, testModifiedContent)
+
+            // Verify vscode.diff command was executed with temp file URIs
             assert.strictEqual(executeCommandStub.calledOnce, true)
             assert.strictEqual(executeCommandStub.firstCall.args[0], 'vscode.diff')
-            assert.strictEqual(executeCommandStub.firstCall.args[1], originalUri)
-            assert.strictEqual(executeCommandStub.firstCall.args[2], modifiedUri)
+            assert(executeCommandStub.firstCall.args[1].fsPath.includes('testFile_original_')) // Original temp file URI
+            assert(executeCommandStub.firstCall.args[2].fsPath.includes('testFile_modified_')) // Modified temp file URI
             assert.strictEqual(executeCommandStub.firstCall.args[3], `testFile.js ${amazonQTabSuffix}`)
 
-            // Verify disposeOnEditorClose was called
-            assert.strictEqual(disposeOnEditorCloseStub.calledOnce, true)
-            assert.strictEqual(disposeOnEditorCloseStub.firstCall.args[0], originalUri)
+            // Verify tab change listener was set up for cleanup
+            assert.strictEqual(tabGroupsOnDidChangeTabsStub.calledOnce, true)
         })
 
-        it('should use custom scheme when provided', async () => {
+        it('should ignore custom scheme parameter (editable diff uses file URIs)', async () => {
             const customScheme = 'custom-scheme'
             await controller.viewDiff(testMessage, customScheme)
 
-            assert.strictEqual(registerTextDocumentContentProviderStub.firstCall.args[0], customScheme)
-            assert.strictEqual(createTempUrisForDiffStub.firstCall.args[4], customScheme)
+            // Verify it still creates editable diff with temp file URIs regardless of scheme parameter
+            assert.strictEqual(executeCommandStub.calledOnce, true)
+            assert(executeCommandStub.firstCall.args[1].fsPath.includes('testFile_original_')) // Original temp file URI
+            assert(executeCommandStub.firstCall.args[2].fsPath.includes('testFile_modified_')) // Modified temp file URI
+
+            // Verify file operations were called (not content provider operations)
+            assert.strictEqual(fsMkdirStub.calledOnce, true)
+            assert.strictEqual(fsWriteFileStub.calledTwice, true)
         })
 
-        it('should pass fileText to createTempUrisForDiff when available', async () => {
-            const testFileText = 'original file content'
-            extractParamsFromMessageStub.returns({
-                filePath: testFilePath,
-                fileText: testFileText,
-                selection: testSelection,
-            })
-
+        it('should read current file content and use original content from message context', async () => {
             await controller.viewDiff(testMessage)
 
-            assert.strictEqual(createTempUrisForDiffStub.firstCall.args[1], testFileText)
+            // Verify fs.readFileText was called to get current file content
+            assert.strictEqual(fsReadFileTextStub.calledOnce, true)
+            assert.strictEqual(fsReadFileTextStub.firstCall.args[0], testFilePath)
+
+            // Verify both temp files were written with correct content
+            assert.strictEqual(fsWriteFileStub.calledTwice, true)
+            assert.strictEqual(fsWriteFileStub.firstCall.args[1], testOriginalContent)
+            assert.strictEqual(fsWriteFileStub.secondCall.args[1], testModifiedContent)
         })
 
         it('should not attempt to show diff when filePath is missing', async () => {
-            extractParamsFromMessageStub.returns({
-                filePath: undefined,
-                selection: testSelection,
-            })
+            const messageWithoutFilePath: ViewDiffMessage = {
+                code: testModifiedContent,
+                context: {
+                    activeFileContext: {
+                        filePath: undefined as any,
+                        fileText: testOriginalContent,
+                        fileLanguage: 'javascript',
+                        matchPolicy: undefined,
+                    },
+                    focusAreaContext: {
+                        selectionInsideExtendedCodeBlock: new vscode.Selection(0, 0, 0, 0),
+                        codeBlock: '',
+                        extendedCodeBlock: '',
+                        names: undefined,
+                    },
+                },
+            }
 
-            await controller.viewDiff(testMessage)
+            await controller.viewDiff(messageWithoutFilePath)
 
-            assert.strictEqual(registerTextDocumentContentProviderStub.called, false)
-            assert.strictEqual(createTempUrisForDiffStub.called, false)
+            assert.strictEqual(fsMkdirStub.called, false)
+            assert.strictEqual(fsWriteFileStub.called, false)
             assert.strictEqual(executeCommandStub.called, false)
         })
 
-        it('should not attempt to show diff when code is missing', async () => {
-            await controller.viewDiff({ code: undefined as unknown as string })
+        it('should not attempt to show diff when context is missing', async () => {
+            await controller.viewDiff({ code: 'some code' })
 
-            assert.strictEqual(registerTextDocumentContentProviderStub.called, false)
-            assert.strictEqual(createTempUrisForDiffStub.called, false)
+            assert.strictEqual(fsMkdirStub.called, false)
+            assert.strictEqual(fsWriteFileStub.called, false)
             assert.strictEqual(executeCommandStub.called, false)
         })
 
-        it('should not attempt to show diff when selection is missing', async () => {
-            extractParamsFromMessageStub.returns({
-                filePath: testFilePath,
-                selection: undefined,
-            })
+        it('should not attempt to show diff when original content is missing', async () => {
+            const messageWithoutOriginalContent: ViewDiffMessage = {
+                code: testModifiedContent,
+                context: {
+                    activeFileContext: {
+                        filePath: testFilePath,
+                        fileText: undefined as any,
+                        fileLanguage: 'javascript',
+                        matchPolicy: undefined,
+                    },
+                    focusAreaContext: {
+                        selectionInsideExtendedCodeBlock: new vscode.Selection(0, 0, 0, 0),
+                        codeBlock: '',
+                        extendedCodeBlock: '',
+                        names: undefined,
+                    },
+                },
+            }
 
-            await controller.viewDiff(testMessage)
+            await controller.viewDiff(messageWithoutOriginalContent)
 
-            assert.strictEqual(registerTextDocumentContentProviderStub.called, false)
-            assert.strictEqual(createTempUrisForDiffStub.called, false)
+            assert.strictEqual(fsMkdirStub.called, false)
+            assert.strictEqual(fsWriteFileStub.called, false)
             assert.strictEqual(executeCommandStub.called, false)
         })
     })

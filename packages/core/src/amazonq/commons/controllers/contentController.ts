@@ -5,6 +5,7 @@
 
 import * as vscode from 'vscode'
 import path from 'path'
+import * as os from 'os'
 import { Position, TextEditor, window } from 'vscode'
 import { getLogger } from '../../../shared/logger/logger'
 import { amazonQDiffScheme, amazonQTabSuffix } from '../../../shared/constants'
@@ -151,20 +152,90 @@ export class EditorContentController {
     }
 
     /**
-     * Displays a diff view comparing proposed changes with the existing file.
+     * Displays an editable diff view comparing original and current file content.
      *
-     * How is diff generated:
-     * 1. Creates a temporary file as a clone of the original file.
-     * 2. Applies the proposed changes to the temporary file within the selected range.
-     * 3. Opens a diff view comparing original file to the temporary file.
+     * Left side: message.context.activeFileContext.fileText (original file content)
+     * Right side: Current content read from message.context.activeFileContext.filePath
      *
-     * This approach ensures that the diff view only shows the changes proposed by Amazon Q,
-     * isolating them from any other modifications in the original file.
+     * The diff view is editable - user can make changes and save to the original file.
      *
-     * @param message the message from Amazon Q chat
-     * @param scheme the URI scheme to use for the diff view
+     * @param message the message from Amazon Q chat containing original content and file path
+     * @param scheme the URI scheme to use for the diff view (ignored for editable diff)
      */
-    public async viewDiff(message: ViewDiffMessage, scheme: string = amazonQDiffScheme) {
+    public async viewDiff(message: ViewDiffMessage, _scheme: string = amazonQDiffScheme) {
+        const errorNotification = 'Unable to Open Diff.'
+
+        try {
+            const originalFilePath = message.context?.activeFileContext?.filePath
+            const originalContent = message.context?.activeFileContext?.fileText
+
+            if (originalFilePath && originalContent !== undefined) {
+                // Read the current content from the file
+                const modifiedContent = await fs.readFileText(originalFilePath)
+                await this.createEditableDiffFromContent(originalFilePath, originalContent, modifiedContent)
+            }
+        } catch (error) {
+            void vscode.window.showInformationMessage(errorNotification)
+            const wrappedError = ChatDiffError.chain(error, `Failed to Open Diff View`, { code: chatDiffCode })
+            getLogger().error('%s: Failed to open diff view %s', chatDiffCode, getErrorMsg(wrappedError, true))
+            throw wrappedError
+        }
+    }
+
+    /**
+     * Creates an editable diff view from original and modified content.
+     * Left side: original content (from temp file)
+     * Right side: modified content (from temp file) - this is editable and saves to original file
+     */
+    private async createEditableDiffFromContent(
+        originalFilePath: string,
+        originalContent: string,
+        modifiedContent: string
+    ) {
+        const originalFile = path.parse(originalFilePath)
+        const tempDir = path.join(os.tmpdir(), 'amazonq-diff')
+
+        // Ensure temp directory exists
+        await fs.mkdir(tempDir)
+
+        // Create temporary files for both original and modified content
+        const timestamp = Date.now()
+        const originalTempFileName = `${originalFile.name}_original_${timestamp}${originalFile.ext}`
+        const modifiedTempFileName = `${originalFile.name}_modified_${timestamp}${originalFile.ext}`
+
+        const originalTempFilePath = path.join(tempDir, originalTempFileName)
+        const modifiedTempFilePath = path.join(tempDir, modifiedTempFileName)
+
+        // Write both contents to temporary files
+        await fs.writeFile(originalTempFilePath, originalContent)
+        await fs.writeFile(modifiedTempFilePath, modifiedContent)
+
+        // Create URIs for both temp files
+        const originalTempUri = vscode.Uri.file(originalTempFilePath)
+        const modifiedTempUri = vscode.Uri.file(modifiedTempFilePath)
+
+        // Open the editable diff view
+        await vscode.commands.executeCommand(
+            'vscode.diff',
+            originalTempUri,
+            modifiedTempUri,
+            `${path.basename(originalFilePath)} ${amazonQTabSuffix}`
+        )
+
+        // Set up save handler to sync changes back to original file
+        this.setupSaveHandler(
+            modifiedTempFilePath,
+            originalFilePath,
+            originalTempFilePath,
+            path.basename(originalFilePath)
+        )
+    }
+
+    /**
+     * Displays a read-only diff view using custom content providers (legacy behavior).
+     * This method is kept for backward compatibility if needed.
+     */
+    public async viewDiffReadOnly(message: ViewDiffMessage, scheme: string = amazonQDiffScheme) {
         const errorNotification = 'Unable to Open Diff.'
         const { filePath, fileText, selection } = extractFileAndCodeSelectionFromMessage(message)
 
@@ -198,5 +269,57 @@ export class EditorContentController {
             getLogger().error('%s: Failed to open diff view %s', chatDiffCode, getErrorMsg(wrappedError, true))
             throw wrappedError
         }
+    }
+
+    /**
+     * Sets up save handler to sync changes from temp file back to original file
+     */
+    private setupSaveHandler(
+        modifiedTempFilePath: string,
+        originalFilePath: string,
+        originalTempFilePath: string,
+        fileName: string
+    ) {
+        // Listen for document saves
+        const saveDisposable = vscode.workspace.onDidSaveTextDocument(async (document) => {
+            if (document.uri.fsPath === modifiedTempFilePath) {
+                try {
+                    // Copy the saved content from temp file to original file
+                    const modifiedContent = await fs.readFileText(modifiedTempFilePath)
+                    await fs.writeFile(originalFilePath, modifiedContent)
+
+                    getLogger().info(`Saved changes from diff view to ${originalFilePath}`)
+
+                    // Show success message
+                    void vscode.window.showInformationMessage(`Changes saved to ${path.basename(originalFilePath)}`)
+                } catch (error) {
+                    getLogger().error(`Failed to save changes to ${originalFilePath}: ${error}`)
+                    void vscode.window.showErrorMessage(`Failed to save changes to ${path.basename(originalFilePath)}`)
+                }
+            }
+        })
+
+        // Clean up when diff tab is closed
+        const tabDisposable = vscode.window.tabGroups.onDidChangeTabs((event) => {
+            const closedTabs = event.closed
+            for (const tab of closedTabs) {
+                if (tab.label === `${fileName} ${amazonQTabSuffix}`) {
+                    // Clean up temporary files
+                    Promise.all([
+                        fs.delete(modifiedTempFilePath).catch((error) => {
+                            getLogger().warn(`Failed to clean up temp file ${modifiedTempFilePath}: ${error}`)
+                        }),
+                        fs.delete(originalTempFilePath).catch((error) => {
+                            getLogger().warn(`Failed to clean up temp file ${originalTempFilePath}: ${error}`)
+                        }),
+                    ])
+
+                    // Dispose event listeners
+                    saveDisposable.dispose()
+                    tabDisposable.dispose()
+                    break
+                }
+            }
+        })
     }
 }
