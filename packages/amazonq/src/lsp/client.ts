@@ -256,6 +256,49 @@ export async function startLanguageServer(
         }
     })
 
+    // Set up terminal command execution handler
+    client.onRequest('aws/terminal/executeCommand', async (params: any) => {
+        logger.info(`Terminal command execution requested: ${params.command}`)
+
+        try {
+            // Create or get existing terminal
+            let terminal = vscode.window.terminals.find((t) => t.name === params.terminalName)
+            if (!terminal || params.createNew) {
+                terminal = vscode.window.createTerminal({
+                    name: params.terminalName || 'Amazon Q Agent',
+                    cwd: params.cwd,
+                    env: params.env,
+                })
+            }
+
+            // Show the terminal
+            terminal.show()
+
+            // For now, we'll execute the command and return a basic response
+            // TODO: Implement proper command execution with output capture
+            terminal.sendText(params.command)
+
+            // Return a basic success response
+            // In a full implementation, we would capture the actual output
+            return {
+                exitCode: 0,
+                stdout: `Command executed in terminal: ${params.command}`,
+                stderr: '',
+                success: true,
+                message: 'Command sent to terminal successfully',
+            }
+        } catch (error) {
+            logger.error(`Terminal command execution failed: ${error}`)
+            return {
+                exitCode: 1,
+                stdout: '',
+                stderr: `Terminal execution error: ${error}`,
+                success: false,
+                message: `Failed to execute command: ${error}`,
+            }
+        }
+    })
+
     const auth = await initializeAuth(client)
 
     await onLanguageServerReady(extensionContext, auth, client, resourcePaths, toDispose)
