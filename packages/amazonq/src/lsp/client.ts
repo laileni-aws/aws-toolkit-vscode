@@ -58,6 +58,345 @@ import { codeReviewInChat } from '../app/amazonqScan/models/constants'
 const localize = nls.loadMessageBundle()
 const logger = getLogger('amazonqLsp.lspClient')
 
+/**
+ * Execute command with output capture using VSCode terminal integration
+ * Uses shell integration API for real-time streaming with clipboard fallback
+ */
+async function executeCommandWithOutputCapture(params: any, logger: any): Promise<any> {
+    return new Promise(async (resolve) => {
+        let stdout = ''
+        const stderr = ''
+        let isCompleted = false
+        let exitCode = 0
+        const outputLines: string[] = []
+
+        // Timeout for command execution (60 seconds)
+        const timeout = setTimeout(() => {
+            if (!isCompleted) {
+                isCompleted = true
+                logger.warn(`Command execution timed out: ${params.command}`)
+                resolve({
+                    exitCode: 124, // Standard timeout exit code
+                    stdout: outputLines.join('\n'),
+                    stderr: stderr + '\nCommand execution timed out after 60 seconds',
+                    success: false,
+                    message: 'Command execution timed out',
+                })
+            }
+        }, 60000)
+
+        try {
+            // Create or get existing terminal
+            let terminal = vscode.window.terminals.find((t) => t.name === params.terminalName)
+            if (!terminal || params.createNew) {
+                terminal = vscode.window.createTerminal({
+                    name: params.terminalName || 'Amazon Q Agent',
+                    iconPath: new vscode.ThemeIcon('layers-dot'),
+                    cwd: params.cwd,
+                    env: params.env,
+                })
+            }
+
+            // Show the terminal
+            terminal.show()
+
+            logger.info(`Executing command in terminal: "${params.command}" in cwd: ${params.cwd}`)
+
+            // TODO: Check for shell integration support and activate it before the first use
+            const hasShellIntegration = !!(terminal as any).shellIntegration?.executeCommand
+
+            if (hasShellIntegration) {
+                logger.debug('Using shell integration API for real-time output capture')
+
+                try {
+                    const execution = (terminal as any).shellIntegration.executeCommand(params.command)
+                    const stream = execution.read()
+
+                    let isFirstChunk = true
+                    // let didOutputNonCommand = false
+                    let receivedFirstChunk = false
+
+                    // Set up timeout for silent commands
+                    const firstChunkTimeout = setTimeout(() => {
+                        if (!receivedFirstChunk) {
+                            logger.debug('No output received within 3 seconds - command may be silent')
+                            outputLines.push('[Command is running but producing no output]')
+                        }
+                    }, 5000)
+
+                    // Process real-time output stream
+                    for await (let data of stream) {
+                        if (!receivedFirstChunk) {
+                            clearTimeout(firstChunkTimeout)
+                            receivedFirstChunk = true
+                        }
+
+                        // Process first chunk to remove VSCode artifacts
+                        if (isFirstChunk) {
+                            data = processFirstChunk(data, params.command)
+                            isFirstChunk = false
+                        } else {
+                            data = stripAnsi(data)
+                        }
+
+                        // Handle Ctrl+C detection
+                        if (data.includes('^C') || data.includes('\u0003')) {
+                            logger.debug('Ctrl+C detected, terminating command')
+                            break
+                        }
+
+                        // Remove command echo from early chunks
+                        // if (!didOutputNonCommand) {
+                        //     const lines = data.split('\n')
+                        //     for (let i = 0; i < lines.length; i++) {
+                        //         if (params.command.includes(lines[i].trim())) {
+                        //             lines.splice(i, 1)
+                        //             i--
+                        //         } else {
+                        //             didOutputNonCommand = true
+                        //             break
+                        //         }
+                        //     }
+                        //     data = lines.join('\n')
+                        // }
+
+                        // Add to output if not empty
+                        if (data && data.trim()) {
+                            const lines = data.split('\n')
+                            outputLines.push(...lines.filter((line: any) => line.trim()))
+                        }
+                    }
+
+                    if (!receivedFirstChunk) {
+                        clearTimeout(firstChunkTimeout)
+                        // Use clipboard fallback for silent commands
+                        const fallbackOutput = await getLatestTerminalOutput()
+                        if (fallbackOutput) {
+                            outputLines.push(fallbackOutput)
+                        }
+                    }
+
+                    stdout = outputLines.join('\n')
+                    exitCode = 0 // Shell integration doesn't provide exit codes easily
+                } catch (shellError) {
+                    logger.warn(`Shell integration failed: ${shellError}, falling back to clipboard method`)
+                    // Fall through to clipboard method
+                }
+            }
+
+            // Fallback to clipboard method if shell integration failed or unavailable
+            if (!hasShellIntegration || !stdout) {
+                logger.debug('Using clipboard fallback for output capture')
+
+                // Send command to terminal
+                terminal.sendText(params.command, true)
+
+                // Wait for command to execute
+                await new Promise((resolve) => setTimeout(resolve, 3000))
+
+                // Capture output using clipboard
+                stdout = await getLatestTerminalOutput()
+
+                // Clean the output
+                stdout = cleanTerminalOutput(stdout)
+
+                // Extract command output (remove command echo and prompt)
+                const commandIndex = stdout.indexOf(params.command)
+                if (commandIndex !== -1) {
+                    const outputStart = commandIndex + params.command.length
+                    stdout = stdout.substring(outputStart).trim()
+                }
+            }
+
+            if (!isCompleted) {
+                isCompleted = true
+                clearTimeout(timeout)
+
+                // Determine success based on output content
+                const success = !stdout.toLowerCase().includes('error') && !stdout.toLowerCase().includes('failed')
+
+                exitCode = success ? 0 : 1
+
+                logger.info(
+                    `Command completed with ${hasShellIntegration ? 'shell integration' : 'clipboard fallback'}`
+                )
+
+                resolve({
+                    exitCode: exitCode,
+                    stdout: stdout,
+                    stderr: stderr,
+                    success: success,
+                    message: success
+                        ? `Command executed successfully via ${hasShellIntegration ? 'shell integration' : 'clipboard fallback'}`
+                        : 'Command may have failed (inferred from output)',
+                })
+            }
+        } catch (error) {
+            if (!isCompleted) {
+                isCompleted = true
+                clearTimeout(timeout)
+
+                logger.error(`Terminal execution failed: ${error}`)
+
+                resolve({
+                    exitCode: 1,
+                    stdout: stdout,
+                    stderr: `Terminal execution error: ${error}`,
+                    success: false,
+                    message: `Failed to execute command: ${error}`,
+                })
+            }
+        }
+    })
+}
+
+/**
+ * Process first chunk from shell integration to remove VSCode artifacts
+ */
+function processFirstChunk(data: string, command: string): string {
+    // Extract output between VSCode sequences
+    const outputBetweenSequences = data.match(/\]633;C([\s\S]*?)\]633;D/)?.[1] || ''
+
+    // Remove VSCode sequences - using String.fromCodePoint to avoid control character warnings
+    const escapeChar = String.fromCodePoint(27) // ESC character
+    const bellChar = String.fromCodePoint(7) // BEL character
+    const vscodeSequenceRegex = new RegExp(
+        escapeChar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+            '\\]633;.[^' +
+            bellChar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+            ']*' +
+            bellChar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+        'g'
+    )
+    const lastMatch = [...data.matchAll(vscodeSequenceRegex)].pop()
+    if (lastMatch && lastMatch.index !== undefined) {
+        data = data.slice(lastMatch.index + lastMatch[0].length)
+    }
+
+    // Place output back after removing sequences
+    if (outputBetweenSequences) {
+        data = outputBetweenSequences + '\n' + data
+    }
+
+    // Remove ANSI codes
+    data = stripAnsi(data)
+
+    // Clean up lines
+    const lines = data ? data.split('\n') : []
+    if (lines.length > 0) {
+        // Remove non-printable characters from first line
+        lines[0] = lines[0].replace(/[^\u0020-\u007E]/g, '')
+
+        // Handle duplicated first character bug
+        if (
+            lines[0].length >= 2 &&
+            lines[0][0] === lines[0][1] &&
+            !['[', '{', '"', "'", '<', '('].includes(lines[0][0])
+        ) {
+            lines[0] = lines[0].slice(1)
+        }
+
+        // Remove terminal artifacts from beginning and end - using String.fromCodePoint
+        const controlCharsRegex = new RegExp(
+            '^[' + String.fromCodePoint(0) + '-' + String.fromCodePoint(31) + '%$>#\\s]*',
+            ''
+        )
+        const trailingControlCharsRegex = new RegExp(
+            '[' + String.fromCodePoint(0) + '-' + String.fromCodePoint(31) + '%$>#\\s]*$',
+            ''
+        )
+        lines[0] = lines[0].replace(controlCharsRegex, '').replace(trailingControlCharsRegex, '')
+    }
+
+    if (lines.length > 1) {
+        const controlCharsRegex = new RegExp(
+            '^[' + String.fromCodePoint(0) + '-' + String.fromCodePoint(31) + '%$>#\\s]*',
+            ''
+        )
+        const trailingControlCharsRegex = new RegExp(
+            '[' + String.fromCodePoint(0) + '-' + String.fromCodePoint(31) + '%$>#\\s]*$',
+            ''
+        )
+        lines[1] = lines[1].replace(controlCharsRegex, '').replace(trailingControlCharsRegex, '')
+    }
+
+    // Final trim to remove any remaining whitespace
+    return lines.join('\n').trim()
+}
+
+/**
+ * Strip ANSI escape codes from text
+ */
+function stripAnsi(text: string): string {
+    // ANSI escape code regex - using String.fromCodePoint to avoid control character warnings
+    const escapeChar = String.fromCodePoint(27) // ESC character
+    const ansiRegex = new RegExp(escapeChar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\[[0-9;]*m', 'g')
+    return text.replace(ansiRegex, '')
+}
+
+/**
+ * Get latest terminal output using clipboard method
+ */
+async function getLatestTerminalOutput(): Promise<string> {
+    // Store original clipboard content
+    const originalClipboard = await vscode.env.clipboard.readText()
+
+    try {
+        // Select all terminal content
+        await vscode.commands.executeCommand('workbench.action.terminal.selectAll')
+
+        // Copy to clipboard
+        await vscode.commands.executeCommand('workbench.action.terminal.copySelection')
+
+        // Clear selection
+        await vscode.commands.executeCommand('workbench.action.terminal.clearSelection')
+
+        // Get terminal contents
+        const terminalContents = (await vscode.env.clipboard.readText()).trim()
+
+        // Check if there's actually new content
+        if (terminalContents === originalClipboard) {
+            return ''
+        }
+
+        return terminalContents
+    } finally {
+        // Restore original clipboard
+        try {
+            await vscode.env.clipboard.writeText(originalClipboard)
+        } catch (error) {
+            // Ignore clipboard restore errors
+        }
+    }
+}
+
+/**
+ * Clean terminal output by removing ANSI codes and VSCode artifacts
+ */
+function cleanTerminalOutput(output: string): string {
+    if (!output) {
+        return ''
+    }
+
+    // Remove ANSI escape codes
+    const escapeChar = String.fromCodePoint(27) // ESC character
+    const bellChar = String.fromCodePoint(7) // BEL character
+
+    let cleaned = output.replace(new RegExp(escapeChar + '\\[[0-9;]*m', 'g'), '')
+
+    // Remove VSCode shell integration sequences
+    cleaned = cleaned.replace(new RegExp(escapeChar + ']633;[A-Z];[^' + bellChar + ']*' + bellChar, 'g'), '')
+    cleaned = cleaned.replace(new RegExp(escapeChar + ']633;[A-Z]' + bellChar, 'g'), '')
+
+    // Remove carriage returns and normalize line endings
+    cleaned = cleaned.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+    // Remove excessive whitespace but preserve structure
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n')
+
+    return cleaned.trim()
+}
+
 export function hasGlibcPatch(): boolean {
     // Skip GLIBC patching for SageMaker environments
     if (isSageMaker()) {
@@ -261,32 +600,8 @@ export async function startLanguageServer(
         logger.info(`Terminal command execution requested: ${params.command}`)
 
         try {
-            // Create or get existing terminal
-            let terminal = vscode.window.terminals.find((t) => t.name === params.terminalName)
-            if (!terminal || params.createNew) {
-                terminal = vscode.window.createTerminal({
-                    name: params.terminalName || 'Amazon Q Agent',
-                    cwd: params.cwd,
-                    env: params.env,
-                })
-            }
-
-            // Show the terminal
-            terminal.show()
-
-            // For now, we'll execute the command and return a basic response
-            // TODO: Implement proper command execution with output capture
-            terminal.sendText(params.command)
-
-            // Return a basic success response
-            // In a full implementation, we would capture the actual output
-            return {
-                exitCode: 0,
-                stdout: `Command executed in terminal: ${params.command}`,
-                stderr: '',
-                success: true,
-                message: 'Command sent to terminal successfully',
-            }
+            // Use pseudo-terminal for output capture
+            return await executeCommandWithOutputCapture(params, logger)
         } catch (error) {
             logger.error(`Terminal command execution failed: ${error}`)
             return {
